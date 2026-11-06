@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "destination": "desktop",
+  "baseline": "af7c0ca7b250ca12e496d1f1867e0b2fe1966cae",
+  "baselineHeads": {
+    "desktop": "77b1236e1bbe00337ed12caa19597a4740cd1dc8",
+    "website": "879cce0381d75ca8fa7c8fcb933089a4725a8e38"
+  },
+  "heads": {
+    "desktop": "2ecc3f69c72148ea29fd77f9c9094fcfd1e10b11",
+    "website": "b7b7cf06df44479a020d0e8f5130fcdab6c5c3fd"
+  },
+  "trees": {
+    "desktop": "af7c0ca7b250ca12e496d1f1867e0b2fe1966cae",
+    "website": "e2f2ec039af08613a86abab911286ed9ebb8813a"
+  },
+  "result": "e2f2ec039af08613a86abab911286ed9ebb8813a"
+}
