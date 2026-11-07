@@ -144,13 +144,18 @@ function makeUserInput(id: string, text: string, extraParts: Array<Record<string
       sessionId: 'sess-1',
       role: 'user',
       status: 'success',
+      modelId: null,
+      messageSnapshot: null,
+      stats: null,
+      searchableText: text,
+      runtimeResumeToken: null,
       data: {
         parts: [{ type: 'text', text }, ...extraParts] as never
       },
       delivery: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
-    }
+    } as never
   }
 }
 
@@ -302,7 +307,7 @@ describe('AntigravityHarnessConnection', () => {
       const textDeltas = events
         .filter((e): e is Extract<AgentRuntimeEvent, { type: 'chunk' }> => e.type === 'chunk')
         .filter((e) => e.chunk.type === 'text-delta')
-        .map((e) => e.chunk.delta)
+        .map((e) => (e.chunk as { delta: string }).delta)
         .join('')
       expect(textDeltas).toContain('Reply from claude-opus-5-5 (high, accept-edits)')
 

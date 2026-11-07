@@ -2,19 +2,12 @@ import { createHash } from 'node:crypto'
 
 import { application } from '@application'
 import { agentService } from '@data/services/AgentService'
-import { agentSessionMessageService } from '@data/services/AgentSessionMessageService'
 import { agentSessionService } from '@data/services/AgentSessionService'
 import { readAgentSessionPath } from '@data/services/agentSessionMessageTree'
-import { modelService } from '@data/services/ModelService'
-import { providerService } from '@data/services/ProviderService'
 import { loggerService } from '@logger'
 import { ensureAgentDataDirectory } from '@main/ai/agents/agentDataDirectory'
 import { resolveAutomationAccess, resolveMountedMcpServers } from '@main/ai/agents/builtin/builtinAgentCapabilities'
-import {
-  buildAgentMcpServers,
-  resolveAgentNotificationContext,
-  resolveLinkedNotifyChannel
-} from '@main/ai/runtime/agentMcpServers'
+import { buildAgentMcpServers, resolveLinkedNotifyChannel } from '@main/ai/runtime/agentMcpServers'
 import { buildAgentRuntimePrompt } from '@main/ai/runtime/agentPrompt'
 import { prepareAgentSessionWorkspaceDirectory } from '@main/ai/runtime/agentSessionWorkspace'
 import { buildAgentUserContent } from '@main/ai/runtime/agentUserContent'
@@ -43,9 +36,8 @@ import {
 } from '@shared/data/presets/antigravity'
 import type { LocalAgentConfiguration } from '@shared/ai/localAgent'
 import type { ReasoningEffortOption } from '@shared/types/aiSdk'
-import { parseUniqueModelId, type UniqueModelId } from '@shared/data/types/model'
 
-import { startMcpStdioBridgeHost, type McpStdioBridgeHost } from './mcpStdioBridgeHost'
+import { startMcpStdioBridgeHost, type McpStdioBridgeHandle } from './mcpStdioBridgeHost'
 import { stageAntigravitySkills, type StagedAntigravitySkills } from './stageAntigravitySkills'
 
 const logger = loggerService.withContext('AntigravityHarnessConnection')
@@ -96,7 +88,7 @@ export async function validateAntigravityAgentSession(session: AgentSessionEntit
 }
 
 export class AntigravityHarnessConnection extends AcpConnection implements AgentRuntimeConnection {
-  private mcpBridge?: McpStdioBridgeHost
+  private mcpBridge?: McpStdioBridgeHandle
   private stagedSkills?: StagedAntigravitySkills
   private rebuildSignature: string
   private permissionMode: AgentPermissionMode = 'default'
@@ -128,7 +120,7 @@ export class AntigravityHarnessConnection extends AcpConnection implements Agent
   }
 
   setBridgeResources(
-    mcpBridge: McpStdioBridgeHost,
+    mcpBridge: McpStdioBridgeHandle,
     stagedSkills: StagedAntigravitySkills,
     usageCapture: AgentSessionUsageCapture
   ): void {
@@ -233,7 +225,6 @@ export class AntigravityHarnessConnection extends AcpConnection implements Agent
 
     const mode = this.permissionMode
     if (mode === 'bypassPermissions' || mode === 'auto') {
-      const toolCall = input.localAcpTool as { title?: string; kind?: string } | undefined
       const options = input.localPermissionOptions as Array<{ optionId: string; kind: string }> | undefined
       const allowOption =
         options?.find((o) => o.kind === 'allow_always') ?? options?.find((o) => o.kind === 'allow_once')
@@ -293,23 +284,21 @@ export class AntigravityHarnessConnection extends AcpConnection implements Agent
     return super.send(effectiveInput)
   }
 
-  override async reconcile(input: {
-    modelId: string
+  override async reconcile(input?: {
+    modelId?: string
     reasoningEffort?: ReasoningEffortOption
     knowledgeBaseIds?: readonly string[]
     fastMode?: boolean
   }): Promise<AgentRuntimeReconcileResult> {
     if (this.closed) return 'rebuild'
-    if (!isAntigravityModelId(input.modelId)) return 'rebuild'
+    const targetModelId = input?.modelId ?? this.currentRawModelId
+    if (!isAntigravityModelId(targetModelId)) return 'rebuild'
 
     const agent = agentService.getAgent(this.agentId)
     const session = agentSessionService.getById(this.sessionId)
     if (!agent || !session) return 'invalid'
 
-    const [skills, workspaceSkillPaths] = await Promise.all([
-      skillService.list({ agentId: agent.id }),
-      skillService.listLocalSkillPaths(session.workspace.path)
-    ])
+    const skills = await skillService.list({ agentId: agent.id })
     const linkedChannel = resolveLinkedNotifyChannel(this.sessionId, agent.id)
     const access = resolveAutomationAccess(agent, {
       channelLinked: linkedChannel !== null,
@@ -326,7 +315,7 @@ export class AntigravityHarnessConnection extends AcpConnection implements Agent
     const agentDataPath = await ensureAgentDataDirectory(application.getPath('feature.agents.data'), agent.id)
     const citationsGuidance = buildCitationsGuidance({
       web: mountedServers.has('cherry-tools'),
-      kb: resolveKnowledgeBaseScope(agent.knowledgeBaseIds, input.knowledgeBaseIds).length > 0
+      kb: resolveKnowledgeBaseScope(agent.knowledgeBaseIds, input?.knowledgeBaseIds).length > 0
     })
     const effectiveLanguage = getEffectiveAgentLanguage(agent)
     const prompt = await buildAgentRuntimePrompt({
@@ -339,7 +328,7 @@ export class AntigravityHarnessConnection extends AcpConnection implements Agent
 
     const freshSignature = computeRebuildSignature({
       workspacePath: session.workspace.path,
-      skillsFingerprint: JSON.stringify(enabledSkills.map((s) => ({ id: s.id, path: s.dirPath }))),
+      skillsFingerprint: JSON.stringify(enabledSkills.map((s) => ({ id: s.id, folderName: s.folderName }))),
       mcpFingerprint: JSON.stringify([...(agent.mcps ?? []), ...mountedServers].sort()),
       systemPromptAppend: prompt.append
     })
@@ -349,7 +338,7 @@ export class AntigravityHarnessConnection extends AcpConnection implements Agent
     }
 
     let patched = false
-    const targetReasoning = input.reasoningEffort ?? agent.configuration?.reasoning_effort ?? 'default'
+    const targetReasoning = input?.reasoningEffort ?? agent.configuration?.reasoning_effort ?? 'default'
     const targetPermissionMode = (agent.configuration?.permission_mode ?? 'default') as AgentPermissionMode
 
     if (this.permissionMode !== targetPermissionMode) {
@@ -366,7 +355,7 @@ export class AntigravityHarnessConnection extends AcpConnection implements Agent
       patched = true
     }
 
-    const resolved = resolveAntigravityAcpModel(input.modelId)
+    const resolved = resolveAntigravityAcpModel(targetModelId)
     const targetModel = resolved.model
     const targetThought = resolved.thoughtLevel ?? mapReasoningEffortToAntigravityThoughtLevel(targetReasoning)
 
@@ -375,7 +364,7 @@ export class AntigravityHarnessConnection extends AcpConnection implements Agent
     )
     if (modelOption && modelOption.currentValue !== targetModel) {
       await this.setSessionConfigDirect(modelOption.id, targetModel)
-      this.currentRawModelId = input.modelId
+      this.currentRawModelId = targetModelId
       patched = true
     }
 
@@ -421,10 +410,7 @@ export async function connectAntigravityAgentSession(
 
   const agentDataPath = await ensureAgentDataDirectory(application.getPath('feature.agents.data'), agent.id)
 
-  const [skills, workspaceSkillPaths] = await Promise.all([
-    skillService.list({ agentId: agent.id }),
-    skillService.listLocalSkillPaths(workspacePath)
-  ])
+  const skills = await skillService.list({ agentId: agent.id })
 
   const linkedChannel = resolveLinkedNotifyChannel(session.id, agent.id)
   const access = resolveAutomationAccess(agent, {
@@ -466,7 +452,7 @@ export async function connectAntigravityAgentSession(
 
   const rebuildSignature = computeRebuildSignature({
     workspacePath,
-    skillsFingerprint: JSON.stringify(enabledSkills.map((s) => ({ id: s.id, path: s.dirPath }))),
+    skillsFingerprint: JSON.stringify(enabledSkills.map((s) => ({ id: s.id, folderName: s.folderName }))),
     mcpFingerprint: JSON.stringify([...(agent.mcps ?? []), ...mountedServers].sort()),
     systemPromptAppend: prompt.append
   })
@@ -475,13 +461,10 @@ export async function connectAntigravityAgentSession(
     agentDataPath,
     sessionId: session.id,
     skills: enabledSkills,
-    getSkillDirectory: (name) => {
-      const match = enabledSkills.find((s) => s.folderName === name)
-      return (match as { dirPath?: string })?.dirPath ?? skillService.getSkillDirectory(name)
-    }
+    getSkillDirectory: (name) => skillService.getSkillDirectory(name)
   })
 
-  let mcpBridge: McpStdioBridgeHost | undefined
+  let mcpBridge: McpStdioBridgeHandle | undefined
   try {
     mcpBridge = await startMcpStdioBridgeHost(mcpServers)
   } catch (err) {

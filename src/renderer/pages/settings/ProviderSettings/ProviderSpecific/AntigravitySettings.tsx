@@ -100,7 +100,7 @@ const AntigravitySettings: FC<AntigravitySettingsProps> = ({ providerId }) => {
     try {
       const result = await ipcApi.request('ai.local_agents.install', { presetId: 'antigravity-acp' })
       if (!result.ok) {
-        toast.error(result.error ?? t('settings.provider.antigravity.install_failed'))
+        toast.error(result.detail ?? t('settings.provider.antigravity.install_failed'))
       }
       await checkStatus()
     } catch (error) {
