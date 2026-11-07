@@ -111,6 +111,38 @@ describe('macOS signing policy', () => {
     })
   })
 
+  it('disables Apple timestamp server calls when ad-hoc signing (identity "-")', async () => {
+    const originalOptionsForFile: (filePath: string) => Record<string, unknown> = () => ({
+      entitlements: 'build/entitlements.mac.plist',
+      hardenedRuntime: true,
+      timestamp: undefined
+    })
+    const configuration = {
+      app: appPath,
+      identity: '-',
+      identityValidation: false,
+      optionsForFile: originalOptionsForFile,
+      platform: 'darwin',
+      strictVerify: true
+    }
+    let receivedConfiguration: typeof configuration | undefined
+
+    await signMacApp(configuration, async (options: typeof configuration) => {
+      receivedConfiguration = options
+    })
+
+    expect(receivedConfiguration?.optionsForFile(appPath)).toEqual({
+      entitlements: 'build/entitlements.mac.plist',
+      hardenedRuntime: true,
+      timestamp: 'none'
+    })
+    expect(receivedConfiguration?.optionsForFile(helperPath)).toEqual({
+      entitlements: helperEntitlements,
+      hardenedRuntime: true,
+      timestamp: 'none'
+    })
+  })
+
   it('wires the custom signer without weakening the inherited Electron policy', () => {
     const builder = parse(readFileSync(path.join(projectRoot, 'electron-builder.yml'), 'utf8')) as {
       mac: { entitlementsInherit?: string; sign?: string; signIgnore?: string | string[] }

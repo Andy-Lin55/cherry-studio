@@ -3,21 +3,25 @@ const path = require('node:path')
 
 const helperEntitlements = path.resolve(__dirname, '../..', 'build', 'entitlements.system-speech.plist')
 
-function createOptionsForFile(appPath, originalOptionsForFile) {
+function createOptionsForFile(appPath, originalOptionsForFile, isAdHoc = false) {
   const helperPath = path.join(appPath, 'Contents', 'Helpers', 'cherry-system-speech')
 
   return (filePath) => {
     const options = originalOptionsForFile?.(filePath)
-    if (filePath !== helperPath) return options
+    const adHocOverrides = isAdHoc && !options?.timestamp ? { timestamp: 'none' } : undefined
+    if (filePath !== helperPath) {
+      return adHocOverrides ? { ...options, ...adHocOverrides } : options
+    }
 
-    return { ...options, entitlements: helperEntitlements }
+    return { ...options, ...adHocOverrides, entitlements: helperEntitlements }
   }
 }
 
 async function signMacApp(configuration, signer = signAsync) {
+  const isAdHoc = configuration.identity === '-'
   await signer({
     ...configuration,
-    optionsForFile: createOptionsForFile(configuration.app, configuration.optionsForFile)
+    optionsForFile: createOptionsForFile(configuration.app, configuration.optionsForFile, isAdHoc)
   })
 }
 

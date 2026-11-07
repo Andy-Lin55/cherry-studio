@@ -1,0 +1,167 @@
+name: MacBook Build & Local Upgrade Release
+
+on:
+  push:
+    branches:
+      - "feat/antigravity-acp-*"
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: "macOS target architecture"
+        required: true
+        default: "both"
+        type: choice
+        options:
+          - arm64
+          - x64
+          - both
+      publish_release:
+        description: "Publish/update rolling GitHub pre-release (mac-acp-latest)"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build-mac:
+    name: Build macOS (${{ inputs.arch || 'both' }})
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: ".node-version"
+
+      - name: Install macOS native build prerequisites
+        run: brew install python-setuptools
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v5
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Electron bundles (global edition)
+        env:
+          CHERRY_EDITION: global
+          NODE_OPTIONS: --max-old-space-size=8192
+          SENTRY_SOURCE_MAP_UPLOAD: "false"
+        run: |
+          pnpm run typecheck
+          pnpm exec electron-vite build
+          pnpm run build:utility-process
+
+      - name: Package macOS installers (.dmg & .zip)
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_FOR_PULL_REQUEST: "true"
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: |
+          TARGET_ARCH="${{ inputs.arch || 'both' }}"
+          ARCH_ARGS=(--arm64 --x64)
+          if [ "$TARGET_ARCH" = "arm64" ]; then
+            ARCH_ARGS=(--arm64)
+          elif [ "$TARGET_ARCH" = "x64" ]; then
+            ARCH_ARGS=(--x64)
+          fi
+
+          SIGN_ARGS=()
+          if [ -z "${CSC_LINK:-}" ]; then
+            echo "No Apple Developer ID certificate configured; ad-hoc signing macOS bundle (identity='-')"
+            SIGN_ARGS=("--config.mac.identity=-")
+          fi
+
+          pnpm exec electron-builder --mac "${ARCH_ARGS[@]}" "${SIGN_ARGS[@]}" --publish never
+          ls -lh dist/
+
+      - name: Upload macOS build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: cherry-studio-macos-${{ github.sha }}
+          path: |
+            dist/*-mac-*.dmg
+            dist/*-mac-*.zip
+            dist/latest-mac.yml
+            scripts/upgrade-mac-local.sh
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish rolling GitHub release (mac-acp-latest)
+        if: ${{ github.event_name == 'push' || inputs.publish_release == true }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          TAG="mac-acp-latest"
+          SHORT_SHA="${SHA:0:7}"
+          NOTES=$(cat <<EOF
+          ## Cherry Studio — Antigravity ACP macOS Build (\`$SHORT_SHA\`)
+
+          Built from branch \`$BRANCH\` (\`$SHA\`) with compliant Google Antigravity CLI (\`agy acp\`) support.
+
+          ### One-Command MacBook Local Upgrade (Preserves All Existing Chats & Data)
+          Run in Terminal on your MacBook (Apple Silicon \`arm64\` or Intel \`x64\`):
+          \`\`\`bash
+          curl -fsSL https://raw.githubusercontent.com/$REPO/$BRANCH/scripts/upgrade-mac-local.sh | bash
+          \`\`\`
+
+          ### Manual Upgrade via \`.dmg\`
+          1. Download \`Cherry-Studio-*-mac-arm64.dmg\` (Apple Silicon M1/M2/M3/M4) or \`Cherry-Studio-*-mac-x64.dmg\` (Intel) below.
+          2. Quit Cherry Studio, open the \`.dmg\`, drag **Cherry Studio.app** to **/Applications** (choose **Replace** — your data in \`~/Library/Application Support/CherryStudio\` stays intact).
+          3. Clear macOS Gatekeeper quarantine on ad-hoc signed builds:
+             \`\`\`bash
+             xattr -cr "/Applications/Cherry Studio.app"
+             \`\`\`
+          EOF
+          )
+
+          git tag -f "$TAG" "$SHA"
+          git push origin "refs/tags/$TAG" --force
+
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$REPO" \
+              --title "Cherry Studio macOS (Antigravity ACP — $SHORT_SHA)" \
+              --notes "$NOTES" \
+              --prerelease
+          else
+            gh release create "$TAG" \
+              --repo "$REPO" \
+              --target "$SHA" \
+              --title "Cherry Studio macOS (Antigravity ACP — $SHORT_SHA)" \
+              --notes "$NOTES" \
+              --prerelease
+          fi
+
+          shopt -s nullglob
+          ASSETS=(dist/*-mac-*.dmg dist/*-mac-*.zip dist/latest-mac.yml scripts/upgrade-mac-local.sh)
+          gh release upload "$TAG" "${ASSETS[@]}" --repo "$REPO" --clobber
