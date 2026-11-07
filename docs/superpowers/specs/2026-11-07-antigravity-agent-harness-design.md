@@ -127,8 +127,8 @@ Focused, isolated modules under `src/main/ai/runtime/antigravity/`:
 3. **`AntigravityHarnessConnection.ts`:**
    - Implements `AgentRuntimeConnection` by extending/delegating to `AcpConnection` with session-harness options:
      - **Model & Effort Mapping (`connect` & `reconcile`):** Resolves `apiModelId` (`claude-opus-5-5`, `claude-sonnet-5-5`, `gemini-4-argon`, `gemini-3.8-flash`, `gpt-oss-120b-medium`) from `input.modelId`, and maps `input.reasoningEffort` (`minimal`/`low` → `'low'`, `medium`/`auto`/undefined → `'medium'`, `high`/`xhigh`/`max` → `'high'`). Applies both via `session/set_config_option` (`model` and `thought_level`) on connect. On `reconcile(next)`:
-       - If `next.modelId` remains on `google-antigravity` and workspace/MCP/skills signature is unchanged, updates `model` and `thought_level` live via `session/set_config_option` and returns `{ action: 'reused' }`.
-       - If `next.modelId` switches to another provider (e.g., `openai-codex::gpt-6.1-sol`) or workspace/MCP/skills changed, returns `{ action: 'rebuild' }` so `AgentSessionRuntimeService` reconnects cleanly.
+       - If `next.modelId` remains on `google-antigravity` and workspace/MCP/skills signature is unchanged, updates `model` and `thought_level` live via `session/set_config_option` and returns `'patched'` (or `'current'` if unchanged).
+       - If `next.modelId` switches to another provider (e.g., `openai-codex::gpt-6.1-sol`) or workspace/MCP/skills changed, returns `'rebuild'` so `AgentSessionRuntimeService` reconnects cleanly.
      - **Permission Mode Mapping:** Reads `agent.configuration?.permission_mode`:
        - `'plan'` → ACP mode `'plan'`
        - `'acceptEdits'` → ACP mode `'accept-edits'`
