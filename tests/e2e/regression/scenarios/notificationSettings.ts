@@ -255,6 +255,35 @@ export async function notificationSettings(app: RegressionApp, initialPage: Page
         try {
           await expect.poll(() => findNotification(answer), { timeout: 15_000 }).toBe(true)
         } catch (error) {
+          if (app.record.platform === 'macos' && process.env.GITHUB_ACTIONS === 'true' && process.env.RUNNER_ENVIRONMENT === 'github-hosted') {
+            const desktop = testInfo.outputPath('ci-notification-desktop.png')
+            try {
+              execFileSync('/usr/sbin/screencapture', ['-x', desktop], { timeout: 10000 })
+              await testInfo.attach('Disposable runner notification desktop', { path: desktop, contentType: 'image/png' })
+            } catch (failure) {
+              await testInfo.attach('Native screenshot failure', { body: String(failure), contentType: 'text/plain' })
+            }
+            const script = `
+              const events = Application('System Events');
+              const result = []; let visited = 0;
+              const value = (fn, fallback) => { try { return fn() } catch (_) { return fallback } };
+              const walk = (node, depth) => {
+                if (++visited > 400 || depth > 10) return;
+                const name = value(() => String(node.name()), '');
+                const text = value(() => String(node.value()), '');
+                result.push({ depth, role: value(() => node.role(), ''), identifier: value(() => node.attributes.byName('AXIdentifier').value(), ''), subrole: value(() => node.subrole(), ''), matchingBody: name.includes(${JSON.stringify(answer)}) || text.includes(${JSON.stringify(answer)}) });
+                for (const child of value(() => node.uiElements(), [])) walk(child, depth + 1);
+              };
+              for (const process of events.processes.whose({name:'NotificationCenter'})()) for (const window of process.windows()) walk(window, 0);
+              JSON.stringify(result);
+            `
+            try {
+              const tree = execFileSync('osascript', ['-l', 'JavaScript', '-e', script], { encoding: 'utf8', timeout: 15000 })
+              await testInfo.attach('Native notification accessibility structure', { body: tree, contentType: 'application/json' })
+            } catch (failure) {
+              await testInfo.attach('Native accessibility failure', { body: String(failure), contentType: 'text/plain' })
+            }
+          }
           const history = await inspectOwnedNotificationHistory(app.record, answer).catch((failure) => ({
             error: String(failure)
           }))

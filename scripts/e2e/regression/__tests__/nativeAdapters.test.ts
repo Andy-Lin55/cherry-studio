@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   openSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   writeFileSync
@@ -317,7 +318,12 @@ it.skipIf(!['darwin', 'win32'].includes(process.platform)).each(dialogModes)(
         }
       }
       if (logHandle !== undefined) closeSync(logHandle)
-      rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 })
+      try {
+        rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 })
+      } catch (error) {
+        const remaining = existsSync(directory) ? readdirSync(directory, { recursive: true }) : []
+        throw new Error(`Owned native fixture cleanup failed; childExit=${child?.exitCode}, remaining=${JSON.stringify(remaining)}`, { cause: error })
+      }
     }
   },
   120_000
