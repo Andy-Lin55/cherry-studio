@@ -72,8 +72,16 @@ function buildExternalApp({ platform = process.platform, arch = process.arch, pa
       const args = [require.resolve('node-gyp/bin/node-gyp.js'), 'rebuild', '--directory', __dirname, `--arch=${arch}`]
       if (platform === 'win32')
         args.push(`--target=${require('electron/package.json').version}`, '--dist-url=https://electronjs.org/headers')
-      execFileSync(process.execPath, args, { stdio: 'inherit' })
-      copyFileSync(path.join(__dirname, 'build/Release/external-app.node'), output)
+      try {
+        execFileSync(process.execPath, args, { stdio: 'inherit' })
+        copyFileSync(path.join(__dirname, 'build/Release/external-app.node'), output)
+      } catch (err) {
+        if (existsSync(destination)) {
+          console.warn('external-app native rebuild failed; using existing prebuilt binary at', destination)
+          return destination
+        }
+        throw err
+      }
     }
     renameSync(output, destination)
     return destination

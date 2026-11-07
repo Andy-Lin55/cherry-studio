@@ -1,17 +1,23 @@
 const { spawnSync } = require('node:child_process')
-const { chmodSync, copyFileSync, mkdirSync } = require('node:fs')
+const { chmodSync, copyFileSync, existsSync, mkdirSync } = require('node:fs')
 const { dirname, join, resolve } = require('node:path')
 
 function buildAppleHelper(arch) {
   const triple = { arm64: 'arm64-apple-macosx13.0', x64: 'x86_64-apple-macosx13.0' }[arch]
   if (!triple) throw new Error('Unsupported Apple speech helper architecture')
   const packageRoot = resolve(__dirname, '..')
+  const destination = join(packageRoot, 'dist', 'native', `darwin-${arch}`, 'cherry-system-speech')
   const args = ['swift', 'build', '--package-path', join(packageRoot, 'native'), '-c', 'release', '--triple', triple]
   const build = spawnSync('xcrun', args, { stdio: 'inherit' })
-  if (build.status !== 0) throw new Error('Apple speech helper compilation failed')
+  if (build.status !== 0) {
+    if (existsSync(destination)) {
+      console.warn('Apple speech helper compilation failed; using existing binary at', destination)
+      return destination
+    }
+    throw new Error('Apple speech helper compilation failed')
+  }
   const binPath = spawnSync('xcrun', [...args, '--show-bin-path'], { encoding: 'utf8' })
   if (binPath.status !== 0) throw new Error('Apple speech helper output resolution failed')
-  const destination = join(packageRoot, 'dist', 'native', `darwin-${arch}`, 'cherry-system-speech')
   mkdirSync(dirname(destination), { recursive: true })
   copyFileSync(join(binPath.stdout.trim(), 'cherry-system-speech'), destination)
   chmodSync(destination, 0o755)
@@ -32,7 +38,13 @@ function buildWindowsHelper(arch) {
       windowsVerbatimArguments: true
     }
   )
-  if (build.error || build.status !== 0) throw new Error('Windows speech helper compilation failed')
+  if (build.error || build.status !== 0) {
+    if (existsSync(destination)) {
+      console.warn('Windows speech helper compilation failed; using existing prebuilt binary at', destination)
+      return destination
+    }
+    throw new Error('Windows speech helper compilation failed')
+  }
   return destination
 }
 

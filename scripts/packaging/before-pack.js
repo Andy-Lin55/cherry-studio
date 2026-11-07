@@ -143,6 +143,13 @@ async function prepareNativeModulesForElectron(
     })
     // The v13 loader prefers this file over build/Release, even after a source rebuild.
     fs.copyFileSync(sourceBinding, path.join(moduleRoot, `prebuilds/${platform}-${arch}.node`))
+  } catch (err) {
+    const prebuildPath = path.join(moduleRoot, `prebuilds/${platform}-${arch}.node`)
+    if (fs.existsSync(prebuildPath)) {
+      console.warn(`better-sqlite3 source rebuild failed; using existing prebuild at ${prebuildPath}`)
+    } else {
+      throw err
+    }
   } finally {
     if (forceBuild === undefined) delete process.env.npm_package_config_node_gyp_force_build
     else process.env.npm_package_config_node_gyp_force_build = forceBuild
