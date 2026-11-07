@@ -1,3 +1,4 @@
+import { isAntigravityProviderId } from '@shared/data/presets/antigravity'
 import type { Model } from '@shared/data/types/model'
 import { ENDPOINT_TYPE, type EndpointType } from '@shared/data/types/model'
 import type { Provider } from '@shared/data/types/provider'
@@ -39,5 +40,5 @@ export function mapEndpointToPiApi(
 
 /** Shared by the Pi and Durable model pickers, child catalog and gateway binding. */
 export function isPiCompatibleModel(provider: Provider, model: Model): boolean {
-  return !isExternalCliProvider(provider) && isGatewayRoutableModel(model)
+  return (!isExternalCliProvider(provider) || isAntigravityProviderId(provider.id)) && isGatewayRoutableModel(model)
 }

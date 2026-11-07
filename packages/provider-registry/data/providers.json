@@ -1080,6 +1080,27 @@
       "name": "OpenAI Codex"
     },
     {
+      "authMethods": ["external-cli"],
+      "availableInEditions": ["global"],
+      "defaultChatEndpoint": "openai-chat-completions",
+      "description": "Google Antigravity - AI model provider",
+      "endpointConfigs": {
+        "openai-chat-completions": {
+          "adapterFamily": "openai-compatible",
+          "baseUrl": "https://antigravity.google"
+        }
+      },
+      "id": "google-antigravity",
+      "metadata": {
+        "website": {
+          "docs": "https://antigravity.google/docs/ide/extensions",
+          "official": "https://antigravity.google"
+        }
+      },
+      "modelListSource": "registry",
+      "name": "Google Antigravity"
+    },
+    {
       "authMethods": ["oauth"],
       "availableInEditions": ["global"],
       "defaultChatEndpoint": "openai-responses",
@@ -2937,5 +2958,5 @@
       "presetProviderId": "minimax"
     }
   ],
-  "version": "bf5d34485566c802"
+  "version": "d841bc333bdfd118"
 }

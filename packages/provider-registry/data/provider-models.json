@@ -16436,6 +16436,101 @@
       "providerId": "gateway"
     },
     {
+      "apiModelId": "claude-opus-5-5",
+      "modelId": "claude-opus-5-5",
+      "providerId": "google-antigravity",
+      "reasoningContracts": {
+        "openai-chat-completions": {
+          "support": {
+            "controls": [
+              {
+                "default": "medium",
+                "kind": "effort",
+                "values": ["low", "medium", "high"]
+              }
+            ],
+            "defaultEffort": "medium"
+          }
+        }
+      }
+    },
+    {
+      "apiModelId": "claude-sonnet-5-5",
+      "modelId": "claude-sonnet-5-5",
+      "providerId": "google-antigravity",
+      "reasoningContracts": {
+        "openai-chat-completions": {
+          "support": {
+            "controls": [
+              {
+                "default": "medium",
+                "kind": "effort",
+                "values": ["low", "medium", "high"]
+              }
+            ],
+            "defaultEffort": "medium"
+          }
+        }
+      }
+    },
+    {
+      "apiModelId": "gemini-3.8-flash",
+      "modelId": "gemini-3-8-flash",
+      "providerId": "google-antigravity",
+      "reasoningContracts": {
+        "openai-chat-completions": {
+          "support": {
+            "controls": [
+              {
+                "default": "medium",
+                "kind": "effort",
+                "values": ["low", "medium", "high"]
+              }
+            ],
+            "defaultEffort": "medium"
+          }
+        }
+      }
+    },
+    {
+      "apiModelId": "gemini-4-argon",
+      "modelId": "gemini-4-argon",
+      "providerId": "google-antigravity",
+      "reasoningContracts": {
+        "openai-chat-completions": {
+          "support": {
+            "controls": [
+              {
+                "default": "medium",
+                "kind": "effort",
+                "values": ["low", "medium", "high"]
+              }
+            ],
+            "defaultEffort": "medium"
+          }
+        }
+      }
+    },
+    {
+      "apiModelId": "gpt-oss-120b-medium",
+      "modelId": "gpt-oss-120b",
+      "providerId": "google-antigravity",
+      "reasoningContracts": {
+        "openai-chat-completions": {
+          "support": {
+            "controls": [
+              {
+                "default": "medium",
+                "kind": "effort",
+                "values": ["medium"]
+              }
+            ],
+            "defaultEffort": "medium"
+          }
+        }
+      }
+    },
+    {
       "endpointTypes": ["openai-image-generation"],
       "imageGeneration": {
         "modes": {
@@ -44643,5 +44738,5 @@
       "providerId": "zhipu"
     }
   ],
-  "version": "ae42a0ee7c463c59"
+  "version": "f81aec46bb51be22"
 }

@@ -20,6 +20,7 @@ import p_doubao from './doubao'
 import p_fireworks from './fireworks'
 import p_gateway from './gateway'
 import p_gemini from './gemini'
+import p_google_antigravity from './google-antigravity'
 import p_gpustack from './gpustack'
 import p_grok from './grok'
 import p_grok_cli from './grok-cli'
@@ -96,6 +97,7 @@ export const PROVIDERS: Provider[] = [
   p_anthropic,
   p_claude_code,
   p_openai_codex,
+  p_google_antigravity,
   p_grok_cli,
   p_omlx,
   p_openai,
