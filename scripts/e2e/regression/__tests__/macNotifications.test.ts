@@ -76,17 +76,32 @@ it('closes Notification Center when an earlier accessibility element disappears'
   command.mockImplementation((_command: string, args: string[]) => {
     runInNewContext(args[3], {
       Application: () => ({
-        processes: { byName: () => ({ windows: () => [element('', [stale, element('widget-editor-button')])] }) }
+        processes: {
+          byName: () => ({ windows: () => (open ? [element('', [stale, element('widget-editor-button')])] : []) }),
+          whose:
+            ({ name }: { name: string }) =>
+            () =>
+              name === 'ControlCenter'
+                ? [
+                    {
+                      menuBars: () => [
+                        {
+                          menuBarItems: () => [
+                            {
+                              attributes: { byName: () => ({ value: () => 'com.apple.menuextra.clock' }) },
+                              click: () => {
+                                open = !open
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                : []
+        }
       }),
-      ObjC: { import: () => undefined },
-      $: {
-        CGEventCreateKeyboardEvent: (_source: unknown, _key: number, down: boolean) => ({ down }),
-        CGEventSetFlags: () => undefined,
-        CGEventPost: (_tap: number, event: { down: boolean }) => {
-          if (!event.down) open = !open
-        },
-        NSThread: { sleepForTimeInterval: () => undefined }
-      }
+      delay: () => undefined
     })
     return ''
   })
@@ -115,6 +130,40 @@ it('does not hide a denied Notification Center inspection as a closed panel', ()
   })
 
   expect(() => setMacNotificationCenterOpen(getRunPaths('/owned-run'), false)).toThrow('Automation permission denied')
+})
+
+it('fails when clicking the clock does not open Notification Center', () => {
+  let now = 0
+  command.mockImplementation((_command: string, args: string[]) => {
+    runInNewContext(args[3], {
+      Application: () => ({
+        processes: {
+          byName: () => ({ windows: () => [] }),
+          whose: () => () => [
+            {
+              menuBars: () => [
+                {
+                  menuBarItems: () => [
+                    {
+                      attributes: { byName: () => ({ value: () => 'com.apple.menuextra.clock' }) },
+                      click: () => undefined
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }),
+      Date: { now: () => (now += 1000) },
+      delay: () => undefined
+    })
+    return ''
+  })
+
+  expect(() => setMacNotificationCenterOpen(getRunPaths('/owned-run'), true)).toThrow(
+    'Notification Center did not reach the requested state'
+  )
 })
 
 it('grants only the permission card for the isolated signed application', async () => {

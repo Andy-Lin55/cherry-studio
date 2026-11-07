@@ -13,6 +13,47 @@ import { assertOwnedProcess, findCdpPid, isDescendant } from './process'
 import type { Platform } from './types'
 
 const ALLOWED_KEYS = new Set(['Alt', 'Control', 'Enter', 'Escape', 'Meta', 'Shift', 'Space', 'a', 'c', 'e', 'k', 's'])
+
+const WINDOWS_NOTIFICATION_CENTER_SCRIPT = String.raw`
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+Add-Type -TypeDefinition @'
+using System;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class NativeNotificationCenter {
+  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr window, StringBuilder value, int size);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr window, StringBuilder value, int size);
+  public static IntPtr Find() {
+    var window = GetForegroundWindow();
+    if (window == IntPtr.Zero || !IsWindowVisible(window)) return IntPtr.Zero;
+    var name = new StringBuilder(512);
+    var kind = new StringBuilder(256);
+    GetWindowText(window, name, name.Capacity);
+    GetClassName(window, kind, kind.Capacity);
+    if (kind.ToString() != "Windows.UI.Core.CoreWindow" ||
+        !(name.ToString().Equals("Action center", StringComparison.OrdinalIgnoreCase) ||
+          name.ToString().Equals("Notification center", StringComparison.OrdinalIgnoreCase))) return IntPtr.Zero;
+    uint owner;
+    GetWindowThreadProcessId(window, out owner);
+    try {
+      using (var process = Process.GetProcessById((int)owner)) {
+        return process.ProcessName == "ShellExperienceHost" ? window : IntPtr.Zero;
+      }
+    } catch (ArgumentException) { return IntPtr.Zero; }
+      catch (InvalidOperationException) { return IntPtr.Zero; }
+  }
+}
+'@
+function Find-NotificationCenter {
+  $handle = [NativeNotificationCenter]::Find()
+  if ($handle -eq [IntPtr]::Zero) { return $null }
+  return [Windows.Automation.AutomationElement]::FromHandle($handle)
+}
+`
 let activeTextResource: { paths: RunPaths; id: string; platform: Platform } | undefined
 let activeWindowsTextFixturePid: number | undefined
 let activeMacTextFixturePath: string | undefined
@@ -184,7 +225,7 @@ export async function allowMacNotificationPermission(paths: RunPaths): Promise<v
     { encoding: 'utf8' }
   ).trim()
   if (!/^Cherry Studio E2E [a-f0-9]{12}$/.test(name)) throw new Error('Unexpected notification application identity')
-  const deadline = Date.now() + 5000
+  const deadline = Date.now() + 15000
   do {
     const { stdout } = await promisify(execFile)(
       'osascript',
@@ -209,8 +250,18 @@ export async function allowMacNotificationPermission(paths: RunPaths): Promise<v
       (read(() => center.windows()) ?? []).some(window => find(window, 0)) ? 'allowed' : 'absent'
     `
       ],
-      { encoding: 'utf8', timeout: 5000 }
-    )
+      { encoding: 'utf8', timeout: 15000 }
+    ).catch((error: NodeJS.ErrnoException & { signal?: string; killed?: boolean; stderr?: string }) => {
+      throw new Error(
+        `Native notification permission inspection failed: ${JSON.stringify({
+          code: error.code,
+          signal: error.signal,
+          killed: error.killed,
+          stderr: error.stderr
+        })}`,
+        { cause: error }
+      )
+    })
     if (stdout.trim() === 'allowed') return
     await new Promise((resolve) => setTimeout(resolve, 250))
   } while (Date.now() < deadline)
@@ -227,9 +278,8 @@ export function setMacNotificationCenterOpen(paths: RunPaths, open: boolean): vo
       'JavaScript',
       '-e',
       `
-    ObjC.import('CoreGraphics')
-    ObjC.import('Foundation')
-    const center = Application('System Events').processes.byName('NotificationCenter')
+    const events = Application('System Events')
+    const center = events.processes.byName('NotificationCenter')
     const read = query => {
       try { return query() } catch (error) {
         if (error.errorNumber !== -1728) throw error
@@ -239,14 +289,29 @@ export function setMacNotificationCenterOpen(paths: RunPaths, open: boolean): vo
       if (read(() => element.attributes.byName('AXIdentifier').value()) === 'widget-editor-button') return true
       return depth < 5 && (read(() => element.uiElements()) ?? []).some(child => containsEditor(child, depth + 1))
     }
-    const open = (read(() => center.windows()) ?? []).some(window => containsEditor(window, 0))
-    if (open !== ${JSON.stringify(open)}) {
-      for (const down of [true, false]) {
-        const event = $.CGEventCreateKeyboardEvent(null, 45, down)
-        $.CGEventSetFlags(event, 8388608)
-        $.CGEventPost(0, event)
-        $.NSThread.sleepForTimeInterval(0.1)
+    const isOpen = () => (read(() => center.windows()) ?? []).some(window => containsEditor(window, 0))
+    if (isOpen() !== ${JSON.stringify(open)}) {
+      let clock
+      const menuIdentifiers = []
+      for (const name of ['ControlCenter', 'SystemUIServer']) {
+        for (const process of events.processes.whose({ name })()) {
+          for (const bar of process.menuBars()) {
+            clock = bar.menuBarItems().find(item => {
+              const identifier = read(() => item.attributes.byName('AXIdentifier').value())
+              menuIdentifiers.push(identifier ?? '')
+              return identifier === 'com.apple.menuextra.clock' || ['Clock', '时钟'].includes(read(() => item.description()))
+            })
+            if (clock) break
+          }
+          if (clock) break
+        }
+        if (clock) break
       }
+      if (!clock) throw new Error('Notification Center clock menu item is unavailable: ' + JSON.stringify(menuIdentifiers))
+      clock.click()
+      const deadline = Date.now() + 3000
+      while (isOpen() !== ${JSON.stringify(open)} && Date.now() < deadline) delay(0.1)
+      if (isOpen() !== ${JSON.stringify(open)}) throw new Error('Notification Center did not reach the requested state')
     }
   `
     ],
@@ -314,18 +379,7 @@ export function setWindowsNotificationCenterOpen(paths: RunPaths, open: boolean)
   assertOwnedProcess(record, record.electronPid, 'electron')
   const script = [
     '$ErrorActionPreference = "Stop"',
-    'Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes',
-    '$root = [Windows.Automation.AutomationElement]::RootElement',
-    'function Find-NotificationCenter {',
-    '  foreach ($hostProcess in @(Get-Process -Name ShellExperienceHost -ErrorAction SilentlyContinue)) {',
-    '    $condition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ProcessIdProperty, $hostProcess.Id)',
-    '    foreach ($window in $root.FindAll([Windows.Automation.TreeScope]::Children, $condition)) {',
-    '      $current = $window.Current',
-    '      if (-not $current.IsOffscreen -and ($current.Name -match "^(Action center|Notification center)$" -or $current.AutomationId -match "^(ActionCenter|NotificationCenter)$")) { return $window }',
-    '    }',
-    '  }',
-    '  return $null',
-    '}',
+    WINDOWS_NOTIFICATION_CENTER_SCRIPT,
     '$previous = $null -ne (Find-NotificationCenter)',
     `$desired = $${open}`,
     'if ($previous -ne $desired) {',
@@ -362,20 +416,12 @@ export function findWindowsNotification(paths: RunPaths, text: string, click = f
   assertOwnedProcess(record, record.electronPid, 'electron')
   const script = [
     '$ErrorActionPreference = "Stop"',
-    'Add-Type -AssemblyName UIAutomationClient',
-    'Add-Type -AssemblyName UIAutomationTypes',
-    '$root = [Windows.Automation.AutomationElement]::RootElement',
+    WINDOWS_NOTIFICATION_CENTER_SCRIPT,
     `$text = '${escapePowerShell(text)}'`,
+    '$center = Find-NotificationCenter',
+    'if ($null -eq $center) { Write-Output "absent"; exit }',
     '$textCondition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Text)',
-    '$match = $null',
-    'foreach ($hostProcess in @(Get-Process -Name ShellExperienceHost -ErrorAction SilentlyContinue)) {',
-    '  $processCondition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ProcessIdProperty, $hostProcess.Id)',
-    '  foreach ($window in $root.FindAll([Windows.Automation.TreeScope]::Children, $processCondition)) {',
-    '    $match = @($window.FindAll([Windows.Automation.TreeScope]::Descendants, $textCondition) | Where-Object { $_.Current.Name.Contains($text) }) | Select-Object -First 1',
-    '    if ($match) { break }',
-    '  }',
-    '  if ($match) { break }',
-    '}',
+    '$match = @($center.FindAll([Windows.Automation.TreeScope]::Descendants, $textCondition) | Where-Object { $_.Current.Name.Contains($text) }) | Select-Object -First 1',
     'if (-not $match) { Write-Output "absent"; exit }',
     ...(click
       ? [
@@ -1278,6 +1324,8 @@ public static class NativeSaveDialog {
   [DllImport("user32.dll")] private static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo info);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder value, int size);
   [DllImport("user32.dll", EntryPoint = "SendMessageW", CharSet = CharSet.Unicode)] public static extern IntPtr SetText(IntPtr window, uint message, IntPtr wParam, string text);
   [DllImport("user32.dll", EntryPoint = "SendMessageW", CharSet = CharSet.Unicode)] public static extern IntPtr ReadText(IntPtr window, uint message, IntPtr wParam, StringBuilder text);
   [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
@@ -1285,6 +1333,14 @@ public static class NativeSaveDialog {
     var info = new GuiThreadInfo();
     info.cbSize = (uint)Marshal.SizeOf(info);
     return GetGUIThreadInfo(0, ref info) ? info.focus : IntPtr.Zero;
+  }
+  public static string DescribeForeground() {
+    var window = GetForegroundWindow();
+    uint owner;
+    GetWindowThreadProcessId(window, out owner);
+    var kind = new StringBuilder(256);
+    GetClassName(window, kind, kind.Capacity);
+    return "handle=" + window + ", owner=" + owner + ", class=" + kind;
   }
 }
 '@`,
@@ -1317,7 +1373,9 @@ public static class NativeSaveDialog {
     '$target = if ($keepName) { Join-Path $directory ($initial.ToString()) } else { $filePath }',
     // Rewriting the visible name can remove an extension hidden by the Windows dialog.
     'if ($keepName) {',
-    '  if ([NativeSaveDialog]::GetForegroundWindow() -ne [IntPtr]$dialog.Current.NativeWindowHandle) { throw "Owned save dialog is not in the foreground" }',
+    '  $focusDeadline = [DateTime]::UtcNow.AddSeconds(5)',
+    '  while ([NativeSaveDialog]::GetForegroundWindow() -ne [IntPtr]$dialog.Current.NativeWindowHandle -and [DateTime]::UtcNow -lt $focusDeadline) { Start-Sleep -Milliseconds 100 }',
+    '  if ([NativeSaveDialog]::GetForegroundWindow() -ne [IntPtr]$dialog.Current.NativeWindowHandle) { throw ("Owned save dialog is not in the foreground: expected=" + $dialog.Current.NativeWindowHandle + ", " + [NativeSaveDialog]::DescribeForeground() + ", focused=" + [NativeSaveDialog]::GetFocusedWindow()) }',
     '  $shell = New-Object -ComObject WScript.Shell',
     '  $shell.SendKeys("%d", $true)',
     // This legacy edit control can omit UIA focus flags; verify its real Win32 focus handle.
@@ -1397,11 +1455,7 @@ public static class NativeSaveDialog {
     '  Write-Output ("ERROR: " + $_.Exception.Message)',
     '}'
   ].join('\n')
-  const output = await runAsyncCapture(
-    'powershell.exe',
-    ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
-    125_000
-  )
+  const output = await runPowerShellCapture(script, 125_000)
   // PowerShell writes thrown messages to the CLIXML error stream, which is unreadable in CI logs.
   // The script reports them on stdout instead so a failing run names the step that failed.
   const reported = output
@@ -1414,13 +1468,24 @@ public static class NativeSaveDialog {
   return { filePath: resolved, suggestedName: basename(resolved) }
 }
 
-function runAsyncCapture(file: string, args: string[], timeout: number): Promise<string> {
+function runPowerShellCapture(script: string, timeout: number): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(file, args, { timeout, windowsHide: true, encoding: 'utf8' }, (error, stdout, stderr) =>
-      error
-        ? reject(new Error(`${file} exited with ${error.code ?? 'error'}: ${decodePowerShellError(stderr)}`))
-        : resolve(stdout ?? '')
+    const child = execFile(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        '[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); & ([scriptblock]::Create([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String([Console]::In.ReadToEnd()))))'
+      ],
+      { timeout, windowsHide: true, encoding: 'utf8' },
+      (error, stdout, stderr) =>
+        error
+          ? reject(new Error(`powershell.exe exited with ${error.code ?? 'error'}: ${decodePowerShellError(stderr)}`))
+          : resolve(stdout ?? '')
     )
+    child.stdin?.on('error', () => undefined)
+    child.stdin?.end(Buffer.from(script, 'utf16le').toString('base64'))
   })
 }
 
