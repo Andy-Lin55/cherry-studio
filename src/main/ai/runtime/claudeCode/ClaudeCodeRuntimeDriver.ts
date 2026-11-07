@@ -11,10 +11,16 @@ import type {
 import type { ImageBlockParam } from '@anthropic-ai/sdk/resources/messages'
 
 import { isUniqueModelId } from '@shared/data/types/model'
+import { isAntigravityModelId } from '@shared/data/presets/antigravity'
+import {
+  connectAntigravityAgentSession,
+  validateAntigravityAgentSession
+} from '@main/ai/runtime/antigravity'
 
 type BetaUsage = SDKResultMessage['usage']
 import { application } from '@application'
 import { agentService } from '@data/services/AgentService'
+import { agentSessionService } from '@data/services/AgentSessionService'
 import { modelService } from '@data/services/ModelService'
 import { loggerService } from '@logger'
 import { collectAssistantFileAttachments } from '@main/ai/messages/assistantFileAttachments'
@@ -1336,6 +1342,11 @@ export class ClaudeCodeRuntimeDriver implements AgentSessionRuntimeDriver {
   readonly capabilities = ['agent-session'] as const
 
   async validateSession(session: AgentSessionEntity): Promise<void> {
+    const agent = session.agentId ? agentService.getAgent(session.agentId) : undefined
+    if (agent?.model && isAntigravityModelId(agent.model)) {
+      await validateAntigravityAgentSession(session)
+      return
+    }
     await application.get('ClaudeCodeBinaryService').ensureExecutable()
     const cwd = session.workspace?.path
     if (!cwd) {
@@ -1352,10 +1363,17 @@ export class ClaudeCodeRuntimeDriver implements AgentSessionRuntimeDriver {
 
   async connect(input: AgentRuntimeConnectInput): Promise<AgentRuntimeConnection> {
     if (!isUniqueModelId(input.modelId)) throw new Error('Provider model required')
+    if (isAntigravityModelId(input.modelId)) {
+      return connectAntigravityAgentSession(input)
+    }
     return new ClaudeCodeRuntimeConnection({ ...input, modelId: input.modelId }).start()
   }
 
   onSessionIdle(sessionId: string): void {
+    const session = agentSessionService.getById(sessionId)
+    const agent = session?.agentId ? agentService.getAgent(session.agentId) : undefined
+    if (agent?.model && isAntigravityModelId(agent.model)) return
+
     // `prewarmAgentSession` bakes the session's trace env when trace mode is on, so the park it
     // leaves behind matches what the next turn asks for either way — no driver-side guard needed.
     void application.get('ClaudeCodeWarmQueryManager').prewarmAgentSession(sessionId)

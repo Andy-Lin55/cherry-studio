@@ -8,8 +8,8 @@ const logger = loggerService.withContext('AntigravitySkillsStage')
 export interface StageAntigravitySkillsInput {
   agentDataPath: string
   sessionId: string
-  skills: ReadonlyArray<{ folderName: string; isEnabled: boolean }>
-  getSkillDirectory: (folderName: string) => string
+  skills: ReadonlyArray<{ folderName: string; isEnabled: boolean; dirPath?: string }>
+  getSkillDirectory?: (folderName: string) => string
 }
 
 export interface StagedAntigravitySkills {
@@ -58,7 +58,8 @@ export async function stageAntigravitySkills(
   let stagedCount = 0
 
   for (const skill of enabledSkills) {
-    const sourceDir = input.getSkillDirectory(skill.folderName)
+    const sourceDir = skill.dirPath ?? input.getSkillDirectory?.(skill.folderName)
+    if (!sourceDir) continue
     try {
       const info = await stat(sourceDir)
       if (!info.isDirectory()) continue

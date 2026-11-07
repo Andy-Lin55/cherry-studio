@@ -451,19 +451,15 @@ export class AcpConnection extends LocalConnection {
           throw new Error('This agent cannot restore the previous conversation; create a new session')
         const session = await this.connection.agent.request<SessionResponse>(
           supportsResume ? 'session/resume' : 'session/load',
-          {
-            cwd,
-            sessionId: resume,
-            mcpServers: []
-          }
+          this.getSessionResumeParams(cwd, resume)
         )
         this.readSessionModels(session)
         this.nativeId = resume
       } else {
-        const session = await this.connection.agent.request<NewSessionResponse & { models?: unknown }>('session/new', {
-          cwd,
-          mcpServers: []
-        })
+        const session = await this.connection.agent.request<NewSessionResponse & { models?: unknown }>(
+          'session/new',
+          this.getSessionNewParams(cwd)
+        )
         this.nativeId = session.sessionId
         this.readSessionModels(session)
       }
@@ -517,8 +513,9 @@ export class AcpConnection extends LocalConnection {
         )
         this.readConfigOptions(updated.configOptions)
       }
+      await this.afterSessionInitialized()
       this.localSessionInfo.protocolInfo.verified.push('session')
-      this.events.push({ type: 'resume-token', token: this.nativeId })
+      this.events.push({ type: 'resume-token', token: this.formatResumeToken(this.nativeId) })
     } finally {
       this.loading = false
       for (const pending of this.pendingUpdates.splice(0)) {
@@ -526,6 +523,31 @@ export class AcpConnection extends LocalConnection {
       }
     }
     return this
+  }
+  protected getSessionNewParams(cwd: string): Record<string, unknown> {
+    return { cwd, mcpServers: [] }
+  }
+  protected getSessionResumeParams(cwd: string, sessionId: string): Record<string, unknown> {
+    return { cwd, sessionId, mcpServers: [] }
+  }
+  protected formatResumeToken(nativeId: string): string {
+    return nativeId
+  }
+  protected async afterSessionInitialized(): Promise<void> {}
+  protected get modelConfigOptionId(): string | undefined {
+    return this.modelConfigId
+  }
+  protected async setSessionConfigDirect(configId: string, value: string | boolean): Promise<void> {
+    if (!this.connection || !this.nativeId || this.closed) {
+      throw new Error('ACP session is unavailable')
+    }
+    const response = await this.connection.agent.request<SetSessionConfigOptionResponse>('session/set_config_option', {
+      sessionId: this.nativeId,
+      configId,
+      ...(typeof value === 'boolean' ? { type: 'boolean' as const } : {}),
+      value
+    })
+    this.readConfigOptions(response.configOptions)
   }
   private readSessionModels(session: SessionResponse) {
     this.legacyMode = session.modes ?? undefined

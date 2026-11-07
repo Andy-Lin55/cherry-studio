@@ -53,6 +53,7 @@ import {
   type AgentSessionEditTarget
 } from '@shared/ai/agentSessionEdit'
 import { AGENT_SESSION_FLOW_PARTS_CACHE_KEY } from '@shared/ai/agentSessionFlowParts'
+import { isAntigravityModelId } from '@shared/data/presets/antigravity'
 import {
   AGENT_SESSION_SLASH_COMMANDS_CACHE_KEY,
   type AgentSessionSlashCommand
@@ -825,7 +826,11 @@ export class AgentSessionRuntimeService extends BaseService {
       const agent = agentService.getAgent(session.agentId)
       const executionId = this.getAgentExecutionId(agent)
       if (!agent || !executionId) return
-      if (agent.type === 'claude-code' && application.get('ClaudeCodeBinaryService').getStatus().phase !== 'ready')
+      if (
+        agent.type === 'claude-code' &&
+        !isAntigravityModelId(executionId) &&
+        application.get('ClaudeCodeBinaryService').getStatus().phase !== 'ready'
+      )
         return
       if (!runtimeDriverRegistry.getAgentSessionDriver(agent.type)) return
 

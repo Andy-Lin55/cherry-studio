@@ -24,6 +24,7 @@ import { isMac } from '@renderer/utils/platform'
 import { getSelectionAgentIssue, SELECTION_AGENT_ISSUE_HINT_KEYS } from '@renderer/utils/selectionAction'
 import { cn } from '@renderer/utils/style'
 import { BUILTIN_AGENT_ROLE } from '@shared/ai/builtinAgent'
+import { isAntigravityModelId } from '@shared/data/presets/antigravity'
 import { AGENT_WORKSPACE_TYPE } from '@shared/data/api/schemas/agentWorkspaces'
 
 import type { SelectionAgentTarget } from '../selectionAgentSession'
@@ -93,7 +94,8 @@ export const SelectionAgentComposeBar: FC<SelectionAgentComposeBarProps> = ({
     : agents?.find((candidate) => candidate.configuration?.builtin_role === BUILTIN_AGENT_ROLE.ASSISTANT)
   // A missing Cherry Assistant is recreated on send, so only a bound agent can be unavailable here.
   const issue = !agents || (!target.agentId && !agent) ? null : getSelectionAgentIssue(agent)
-  const binary = useClaudeCodeBinary(agent?.type === 'claude-code')
+  const isAntigravity = isAntigravityModelId(agent?.model)
+  const binary = useClaudeCodeBinary(agent?.type === 'claude-code' && !isAntigravity)
   const { data: workspaces, refetch: refetchWorkspaces } = useQuery('/agent-workspaces')
   useDataChange('/agent-workspaces', () => void refetchWorkspaces())
   const workspaceId = target.workspace.type === AGENT_WORKSPACE_TYPE.USER ? target.workspace.workspaceId : null

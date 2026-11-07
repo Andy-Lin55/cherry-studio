@@ -11,6 +11,7 @@ import AgentComposer, {
 } from '@renderer/components/composer/variants/AgentComposer'
 import { ipcApi } from '@renderer/ipc'
 import type { GetAgentResponse } from '@renderer/types/agent'
+import { isAntigravityModelId } from '@shared/data/presets/antigravity'
 import type { AgentSessionEntity } from '@shared/data/api/schemas/agentSessions'
 import type { Model } from '@shared/data/types/model'
 
@@ -68,13 +69,16 @@ function AgentComposerSlot({
   resendEditedMessage,
   steerWhileBusy
 }: AgentComposerSlotProps) {
-  const binary = useClaudeCodeBinary(activeAgent?.type === 'claude-code')
+  const isAntigravity = isAntigravityModelId(
+    (session as { model?: string } | undefined)?.model ?? activeAgent?.model ?? activeModel?.id
+  )
+  const binary = useClaudeCodeBinary(activeAgent?.type === 'claude-code' && !isAntigravity)
   useEffect(() => {
-    if (activeAgent?.type !== 'claude-code' || binary.status?.phase !== 'ready') return
+    if (activeAgent?.type !== 'claude-code' || isAntigravity || binary.status?.phase !== 'ready') return
     void ipcApi.request('ai.agent.session.prewarm', { sessionId }).catch((error) => {
       logger.warn('Failed to warm installed Claude runtime', { error })
     })
-  }, [activeAgent?.type, binary.status?.phase, sessionId])
+  }, [activeAgent?.type, binary.status?.phase, isAntigravity, sessionId])
   const compactWhenSingleLine = useRightPanelPresentationMaximized()
   const rightPaneActions = useOptionalAgentRightPaneActions()
   const { t } = useTranslation()

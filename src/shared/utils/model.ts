@@ -12,6 +12,7 @@
  */
 
 import { endpointImpliedCapability, MODALITY, VENDOR_PATTERNS } from '@cherrystudio/provider-registry'
+import { isAntigravityProviderId } from '@shared/data/presets/antigravity'
 import {
   CHERRYAI_PROVIDER_ID,
   isManagedCherryAiDefaultModel,
@@ -114,7 +115,9 @@ export const isGatewayRoutableModel = (model: Model): boolean => {
 
 /** Models the public API gateway and Code Mate may expose. */
 export const isPublicGatewayRoutableModel = (model: Model): boolean =>
-  isGatewayRoutableModel(model) && !isManagedCherryCloudModel(model.providerId)
+  isGatewayRoutableModel(model) &&
+  !isManagedCherryCloudModel(model.providerId) &&
+  !isAntigravityProviderId(model.providerId)
 
 // ---------------------------------------------------------------------------
 // Reasoning configuration

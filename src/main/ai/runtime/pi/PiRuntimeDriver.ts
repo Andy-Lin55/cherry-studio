@@ -7,6 +7,11 @@ import { mcpServerService } from '@data/services/McpServerService'
 import { getRetiredAgentSessionMigration } from '@data/services/retiredAgentRuntimeMigration'
 import { prepareAgentSessionWorkspaceDirectory } from '@main/ai/runtime/agentSessionWorkspace'
 import { PI_BUILTIN_TOOLS } from '@shared/ai/piBuiltinTools'
+import { isAntigravityModelId } from '@shared/data/presets/antigravity'
+import {
+  connectAntigravityAgentSession,
+  validateAntigravityAgentSession
+} from '@main/ai/runtime/antigravity'
 import type { Tool } from '@shared/ai/tool'
 import type { AgentSessionEntity } from '@shared/data/api/schemas/agentSessions'
 import { isUniqueModelId } from '@shared/data/types/model'
@@ -32,6 +37,11 @@ export class PiRuntimeDriver implements AgentSessionRuntimeDriver {
   readonly recoverSessions = migrateRetiredSessionHistories
 
   async validateSession(session: AgentSessionEntity): Promise<void> {
+    const agent = session.agentId ? agentService.getAgent(session.agentId) : undefined
+    if (agent?.model && isAntigravityModelId(agent.model)) {
+      await validateAntigravityAgentSession(session)
+      return
+    }
     await ensureRetiredSessionHistory(session.id)
     const cwd = session.workspace?.path
     if (!cwd) {
@@ -40,7 +50,6 @@ export class PiRuntimeDriver implements AgentSessionRuntimeDriver {
     if (!session.agentId) {
       throw new Error(`pi agent session ${session.id} has no agent`)
     }
-    const agent = agentService.getAgent(session.agentId)
     if (!agent?.model) {
       throw new Error(`pi agent ${session.agentId} has no model configured`)
     }
@@ -53,6 +62,9 @@ export class PiRuntimeDriver implements AgentSessionRuntimeDriver {
 
   async connect(input: AgentRuntimeConnectInput): Promise<AgentRuntimeConnection> {
     if (!isUniqueModelId(input.modelId)) throw new Error('Provider model required')
+    if (isAntigravityModelId(input.modelId)) {
+      return connectAntigravityAgentSession(input)
+    }
     const migration = getRetiredAgentSessionMigration(application.get('DbService').getDb(), input.sessionId)
     await ensureRetiredSessionHistory(input.sessionId)
     const migratedInput = migration
