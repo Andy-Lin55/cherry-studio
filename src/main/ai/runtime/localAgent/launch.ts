@@ -183,13 +183,18 @@ export async function resolveLocalAgentLaunch(
       }
     }
   }
+  const legacyAntigravityServer =
+    preset?.id === 'antigravity-acp' && path.basename(executable).toLowerCase().startsWith('agy_acp_server')
+  const defaultArgs = legacyAntigravityServer
+    ? process.platform === 'linux'
+      ? ['--uid=']
+      : []
+    : [...(preset?.platformArgs?.[process.platform as 'linux' | 'darwin' | 'win32'] ?? preset?.args ?? [])]
   return {
     executable,
     ...(nativeModel ? { nativeModel } : {}),
     source,
-    args: config.args.length
-      ? config.args
-      : [...(preset?.platformArgs?.[process.platform as 'linux' | 'darwin' | 'win32'] ?? preset?.args ?? [])],
+    args: config.args.length ? config.args : defaultArgs,
     env: mergeEnvironment(env, preset?.env, config.env)
   }
 }

@@ -242,15 +242,13 @@ export const LOCAL_AGENT_PRESETS: readonly LocalAgentPreset[] = [
   {
     id: 'antigravity-acp',
     terminalArgs: [],
+    loginArgs: ['acp', '--login'],
     terminalExecutable: 'agy',
     name: 'Google Antigravity',
     protocol: 'acp',
-    executable: 'agy_acp_server.par',
-    aliases: ['agy_acp_server'],
-    platformArgs: {
-      linux: ['--uid=']
-    },
-    args: [],
+    executable: 'agy',
+    aliases: ['agy_acp_server.par', 'agy_acp_server'],
+    args: ['acp'],
     helpUrl: 'https://antigravity.google/docs/ide/extensions'
   },
   {

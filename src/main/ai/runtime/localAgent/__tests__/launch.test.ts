@@ -327,7 +327,7 @@ agent_servers:
     ['junie', 'junie', ['--acp=true']],
     ['factory-droid', 'droid', ['exec', '--output-format', 'acp-daemon']],
     ['devin', 'devin', ['acp']],
-    ['antigravity-acp', 'agy_acp_server.par', []],
+    ['antigravity-acp', 'agy', ['acp']],
     ['mistral-vibe', 'vibe-acp', []],
     ['amp-acp', 'amp-acp', []],
     ['pi-acp', 'pi-acp', []],
@@ -343,7 +343,7 @@ agent_servers:
     }
     const launch = await resolveLocalAgentLaunch({ ...config, presetId, protocol: 'acp' })
     expect(launch.executable).toBe(`/user/bin/${executable}`)
-    expect(launch.args).toEqual(presetId === 'antigravity-acp' && process.platform === 'linux' ? ['--uid='] : args)
+    expect(launch.args).toEqual(args)
     expect(launch.env.MISE_DATA_DIR).toBe('/user/mise')
   })
 
@@ -376,7 +376,7 @@ agent_servers:
     expect(found.find((entry) => entry.presetId === 'codex')).toMatchObject({ source: 'none' })
   })
 
-  it('detects the Antigravity adapter and interactive CLI independently', async () => {
+  it('detects the Antigravity CLI for ACP and falls back to legacy server aliases', async () => {
     inventory.snapshots['agy_acp_server.par'] = {
       name: 'agy_acp_server.par',
       availability: { source: 'system', path: '/user/bin/agy_acp_server.par' }
@@ -384,10 +384,17 @@ agent_servers:
     const findAntigravity = async () =>
       (await detectLocalAgents()).find((entry) => entry.presetId === 'antigravity-acp')
     expect(await findAntigravity()).toMatchObject({ path: '/user/bin/agy_acp_server.par', terminalPath: undefined })
+    const legacyLaunch = await resolveLocalAgentLaunch({ ...config, presetId: 'antigravity-acp', protocol: 'acp' })
+    expect(legacyLaunch.executable).toBe('/user/bin/agy_acp_server.par')
+    expect(legacyLaunch.args).toEqual(process.platform === 'linux' ? ['--uid='] : [])
+
     inventory.snapshots.agy = { name: 'agy', availability: { source: 'system', path: '/user/bin/agy' } }
     expect(await findAntigravity()).toMatchObject({
-      path: '/user/bin/agy_acp_server.par',
+      path: '/user/bin/agy',
       terminalPath: '/user/bin/agy'
     })
+    const cliLaunch = await resolveLocalAgentLaunch({ ...config, presetId: 'antigravity-acp', protocol: 'acp' })
+    expect(cliLaunch.executable).toBe('/user/bin/agy')
+    expect(cliLaunch.args).toEqual(['acp'])
   })
 })

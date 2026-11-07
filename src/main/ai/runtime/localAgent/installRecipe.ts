@@ -58,7 +58,8 @@ export function resolveInstallRecipe(
   if (!preset) throw new Error('Unknown local agent preset')
   // Hermes is absent from the registry; Kimi's registry entry still ships the retired CLI.
   const native =
-    preset.protocol !== 'acp' || ['kimi', 'hermes', 'deepseek-harness', 'openclaw'].includes(presetId)
+    preset.protocol !== 'acp' ||
+    ['kimi', 'hermes', 'deepseek-harness', 'openclaw', 'antigravity-acp'].includes(presetId)
       ? CODE_CLI_TOOL_PRESETS.find((entry) => entry.executable === preset.executable)
       : undefined
   if (native) return resolveCliInstallRecipe(native, undefined, platform)

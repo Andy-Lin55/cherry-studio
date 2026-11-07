@@ -114,6 +114,8 @@ describe('system agent install recipes', () => {
     expect(unix.args.join(' ')).toContain('https://antigravity.google/cli/install.sh')
     expect(windows).toMatchObject({ manager: 'script', command: 'powershell.exe' })
     expect(windows.args.join(' ')).toContain('https://antigravity.google/cli/install.ps1')
+    expect(resolveInstallRecipe('antigravity-acp', undefined, 'darwin')).toEqual(unix)
+    expect(resolveInstallRecipe('antigravity-acp', undefined, 'win32')).toEqual(windows)
     expect(() => resolveCliInstallRecipe(CODE_CLI_TOOL_PRESET_BY_EXECUTABLE.agy!, '1.0.0')).toThrow()
   })
 
