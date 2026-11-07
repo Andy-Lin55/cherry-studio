@@ -1,5 +1,6 @@
 import { lazy, type ReactNode } from 'react'
 
+import { isAntigravityProviderId } from '@shared/data/presets/antigravity'
 import { isClaudeCodeProviderId } from '@shared/data/presets/claudeCode'
 import { isCodexProviderId } from '@shared/data/presets/codex'
 import { isGrokCliProviderId } from '@shared/data/presets/grokCli'
@@ -8,6 +9,7 @@ import { isAwsBedrockProvider, isProviderSupportAuth, isVertexProvider, matchesP
 
 import type { useProviderMeta } from '../hooks/providerSetting/useProviderMeta'
 
+const AntigravitySettings = lazy(() => import('./AntigravitySettings'))
 const AwsBedrockSettings = lazy(() => import('./AwsBedrockSettings'))
 const CherryInOauth = lazy(() => import('./CherryInOauth'))
 const ClaudeCodeSettings = lazy(() => import('./ClaudeCodeSettings'))
@@ -65,6 +67,11 @@ export const PROVIDER_SPECIFIC_SETTINGS_REGISTRY: Record<ProviderSpecificPlaceme
       key: 'claude-code-settings',
       when: ({ provider }) => isClaudeCodeProviderId(provider.id),
       render: (providerId) => <ClaudeCodeSettings providerId={providerId} />
+    },
+    {
+      key: 'antigravity-settings',
+      when: ({ provider }) => isAntigravityProviderId(provider.id),
+      render: (providerId) => <AntigravitySettings providerId={providerId} />
     },
     {
       key: 'codex-oauth',

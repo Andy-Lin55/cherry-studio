@@ -1,9 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { authorizeTokenDanceApiKeyMock } = vi.hoisted(() => ({
-  authorizeTokenDanceApiKeyMock: vi.fn(() => Promise.resolve('td-key'))
+const { authorizeTokenDanceApiKeyMock, listLocalAgentModelsMock } = vi.hoisted(() => ({
+  authorizeTokenDanceApiKeyMock: vi.fn(() => Promise.resolve('td-key')),
+  listLocalAgentModelsMock: vi.fn(() =>
+    Promise.resolve({ models: [{ id: 'claude-opus-5-5', name: 'Claude Opus 5.5' }] })
+  )
 }))
 vi.mock('@main/services/tokenDanceOAuth', () => ({ authorizeTokenDanceApiKey: authorizeTokenDanceApiKeyMock }))
+vi.mock('@main/ai/runtime/localAgent/LocalRuntimeDriver', () => ({
+  listLocalAgentModels: listLocalAgentModelsMock
+}))
 
 import { application } from '@application'
 import { OAuthSignInCancelledError } from '@main/services/oauth/errors'
@@ -112,6 +118,24 @@ describe('oauthHandlers', () => {
     await expect(oauthHandlers['oauth.check_external_login']({ providerId: 'claude-code' }, ctx)).resolves.toBe(true)
     expect(application.get).toHaveBeenCalledWith('CodeCliService')
     expect(codeCliService.checkClaudeLogin).toHaveBeenCalledTimes(1)
+  })
+
+  it('probes google-antigravity login via official antigravity-acp model session', async () => {
+    await expect(
+      oauthHandlers['oauth.check_external_login']({ providerId: 'google-antigravity' }, ctx)
+    ).resolves.toBe(true)
+    expect(listLocalAgentModelsMock).toHaveBeenCalledWith({
+      protocol: 'acp',
+      presetId: 'antigravity-acp',
+      enabled: true,
+      args: [],
+      env: {}
+    })
+
+    listLocalAgentModelsMock.mockRejectedValueOnce(new Error('Authentication required'))
+    await expect(
+      oauthHandlers['oauth.check_external_login']({ providerId: 'google-antigravity' }, ctx)
+    ).resolves.toBe(false)
   })
 
   it('rejects check_external_login for a non-external-cli provider', () => {

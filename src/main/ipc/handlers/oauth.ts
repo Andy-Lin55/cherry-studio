@@ -1,5 +1,7 @@
 import { application } from '@application'
+import { listLocalAgentModels } from '@main/ai/runtime/localAgent/LocalRuntimeDriver'
 import { authorizeTokenDanceApiKey } from '@main/services/tokenDanceOAuth'
+import { isAntigravityProviderId } from '@shared/data/presets/antigravity'
 import { isClaudeCodeProviderId } from '@shared/data/presets/claudeCode'
 import type { oauthRequestSchemas } from '@shared/ipc/schemas/oauth'
 import type { IpcHandlersFor } from '@shared/ipc/types'
@@ -21,14 +23,24 @@ export const oauthHandlers: IpcHandlersFor<typeof oauthRequestSchemas> = {
   'oauth.get_account': ({ providerId }) => runtime().getAccount(providerId),
   'oauth.logout': ({ providerId }) => runtime().logout(providerId),
   'oauth.tokendance.authorize_api_key': () => authorizeTokenDanceApiKey(),
-  // External-CLI login probe. `claude-code` is the only provider whose
-  // `authMethods` includes `'external-cli'` today; reject anything else rather
-  // than silently returning the Claude probe for an unrelated providerId. A
-  // second external-cli provider adds a dispatch branch here.
+  // External-CLI login probes (`claude-code` and `google-antigravity`).
+  // Reject anything else rather than silently returning another CLI's probe.
   'oauth.check_external_login': ({ providerId }) => {
-    if (!isClaudeCodeProviderId(providerId)) {
-      throw new Error(`Unsupported external-cli provider: ${providerId}`)
+    if (isClaudeCodeProviderId(providerId)) {
+      return application.get('CodeCliService').checkClaudeLogin()
     }
-    return application.get('CodeCliService').checkClaudeLogin()
+    if (isAntigravityProviderId(providerId)) {
+      return listLocalAgentModels({
+        protocol: 'acp',
+        presetId: 'antigravity-acp',
+        enabled: true,
+        args: [],
+        env: {}
+      }).then(
+        (catalog) => Boolean(catalog.models && catalog.models.length > 0),
+        () => false
+      )
+    }
+    throw new Error(`Unsupported external-cli provider: ${providerId}`)
   }
 }
