@@ -45,9 +45,9 @@ export function useLocalAgentModelSelection(
   const { updateNativeModel } = useUpdateAgent()
   const gateway = useApiGatewayProvider()
   const native = LOCAL_AGENT_MODEL_CONFIG[config?.presetId ?? '']
-  const sourceRestrictions: LocalAgentModelSourceRestrictions | undefined = native
-    ? undefined
-    : {
+  const supportsGateway = Boolean(native && !native.nativeOnly)
+  const sourceRestrictions: LocalAgentModelSourceRestrictions | undefined = !native
+    ? {
         native: t('local_agents.global_model_unavailable'),
         gateway: t(
           config?.presetId === 'cursor'
@@ -55,12 +55,15 @@ export function useLocalAgentModelSelection(
             : 'local_agents.model_sources.gateway_not_integrated'
         )
       }
-  const { models } = useModels({ enabled: true }, { fetchEnabled: !!native })
-  const { providers } = useProviders(undefined, { enabled: !!native })
+    : native.nativeOnly
+      ? { gateway: t('local_agents.model_sources.gateway_not_integrated') }
+      : undefined
+  const { models } = useModels({ enabled: true }, { fetchEnabled: supportsGateway })
+  const { providers } = useProviders(undefined, { enabled: supportsGateway })
   const gatewayProviders = getGatewayProviderIds(providers)
   const allProvidersById = new Map(providers.map((provider) => [provider.id, provider]))
   const gatewayModels =
-    native && gateway && CLI_TOOL_PROVIDER_MAP[native.tool]([gateway.provider]).length
+    native && !native.nativeOnly && gateway && CLI_TOOL_PROVIDER_MAP[native.tool]([gateway.provider]).length
       ? models.filter((model) => isCliGatewayModel(gatewayProviders, model))
       : []
   const viaGateway = !!config?.sourceModelId && config.sourceModelViaGateway === true
@@ -90,6 +93,10 @@ export function useLocalAgentModelSelection(
     const { files: expectedFiles } = await ipcApi.request('code_cli.read_config', {
       targets: [...getCliConfigTargets(native.tool)]
     })
+    if (native.nativeOnly) {
+      if (id?.startsWith(GATEWAY_MODEL_PREFIX)) throw new Error(t('local_agents.models_unavailable'))
+      return updateNativeModel(agent.id, id, { expectedFiles })
+    }
     const drafts = createCliConfigDraftFiles(expectedFiles)
     const configBlob = stripClaudeDetailedModels(extractConfigFromCliConfigDraft(native.tool, drafts) ?? {})
     const model = gatewayModels.find((model) => `${GATEWAY_MODEL_PREFIX}${model.id}` === id)

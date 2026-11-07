@@ -38,6 +38,7 @@ import {
 } from '@shared/ai/elicitation'
 import type { LocalAcpTool } from '@shared/ai/localAgent'
 import { LocalAgentTurnUsageSchema } from '@shared/ai/localAgentUsage'
+import { resolveAntigravityAcpModel } from '@shared/data/presets/antigravity'
 
 import type { AgentRuntimeUserInput } from '../types'
 import { acpError } from './acpError'
@@ -469,29 +470,52 @@ export class AcpConnection extends LocalConnection {
       for (const pending of this.pendingUpdates.splice(0)) {
         if (pending.sessionId === this.nativeId) this.update(pending.update)
       }
-      if (this.defaultModel && this.localSessionInfo.activeModel?.id !== this.defaultModel) {
+      let targetModel = this.defaultModel
+      let targetThoughtLevel: string | undefined
+      if (targetModel && this.config.presetId === 'antigravity-acp') {
+        const resolved = resolveAntigravityAcpModel(targetModel)
+        targetModel = resolved.model
+        targetThoughtLevel = resolved.thoughtLevel
+      }
+      if (targetModel && this.localSessionInfo.activeModel?.id !== targetModel) {
         if (
           this.localSessionInfo.models?.length &&
-          !this.localSessionInfo.models.some((model) => model.id === this.defaultModel)
+          !this.localSessionInfo.models.some((model) => model.id === targetModel)
         )
-          throw new Error(t('local_agent.model_unavailable', { model: this.defaultModel }))
+          throw new Error(t('local_agent.model_unavailable', { model: targetModel }))
         if (this.modelConfigId) {
           const updated = await this.connection.agent.request<SetSessionConfigOptionResponse>(
             'session/set_config_option',
             {
               sessionId: this.nativeId,
               configId: this.modelConfigId,
-              value: this.defaultModel
+              value: targetModel
             }
           )
           this.readConfigOptions(updated.configOptions)
         } else if (this.legacyModels) {
           await this.connection.agent.request('session/set_model', {
             sessionId: this.nativeId,
-            modelId: this.defaultModel
+            modelId: targetModel
           })
-          this.localSessionInfo.activeModel = { id: this.defaultModel }
+          this.localSessionInfo.activeModel = { id: targetModel }
         } else throw new Error('This agent does not support model selection')
+      }
+      if (
+        targetThoughtLevel &&
+        this.localSessionInfo.thoughtLevel &&
+        this.localSessionInfo.thoughtLevel.currentValue !== targetThoughtLevel &&
+        this.localSessionInfo.thoughtLevel.options.some((opt) => opt.value === targetThoughtLevel)
+      ) {
+        const updated = await this.connection.agent.request<SetSessionConfigOptionResponse>(
+          'session/set_config_option',
+          {
+            sessionId: this.nativeId,
+            configId: this.localSessionInfo.thoughtLevel.id,
+            value: targetThoughtLevel
+          }
+        )
+        this.readConfigOptions(updated.configOptions)
       }
       this.localSessionInfo.protocolInfo.verified.push('session')
       this.events.push({ type: 'resume-token', token: this.nativeId })

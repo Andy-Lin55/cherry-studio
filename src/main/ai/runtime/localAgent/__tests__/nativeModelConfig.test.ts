@@ -63,6 +63,29 @@ describe('native model defaults', () => {
     expect(JSON.parse(updateNativeModelConfig('codebuddy-settings', saved))).toEqual({ theme: 'dark' })
   })
 
+  it('saves and clears Antigravity CLI model while retaining workspace and permission settings', () => {
+    const original = JSON.stringify({
+      allowNonWorkspaceAccess: true,
+      permissions: { allow: ['Bash(git:*)'] },
+      trustedWorkspaces: ['D:\\BaiduNetdiskDownload\\cherryStudio']
+    })
+    const saved = updateNativeModelConfig('antigravity-settings', original, 'claude-opus-5-5')
+    expect(readNativeModelConfig('antigravity-settings', saved)).toBe('claude-opus-5-5')
+    expect(JSON.parse(saved)).toEqual({
+      allowNonWorkspaceAccess: true,
+      permissions: { allow: ['Bash(git:*)'] },
+      trustedWorkspaces: ['D:\\BaiduNetdiskDownload\\cherryStudio'],
+      model: 'claude-opus-5-5'
+    })
+    const cleared = updateNativeModelConfig('antigravity-settings', saved)
+    expect(readNativeModelConfig('antigravity-settings', cleared)).toBeUndefined()
+    expect(JSON.parse(cleared)).toEqual({
+      allowNonWorkspaceAccess: true,
+      permissions: { allow: ['Bash(git:*)'] },
+      trustedWorkspaces: ['D:\\BaiduNetdiskDownload\\cherryStudio']
+    })
+  })
+
   it('keeps credentials and JSONC comments when selecting a Claude model', () => {
     const text = updateNativeModelConfig(
       'claude-settings',

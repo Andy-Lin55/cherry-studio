@@ -95,6 +95,8 @@ jobs:
           SIGN_ARGS=()
           if [ -z "${CSC_LINK:-}" ]; then
             echo "No Apple Developer ID certificate configured; ad-hoc signing macOS bundle (identity='-')"
+            unset CSC_LINK CSC_KEY_PASSWORD
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
             SIGN_ARGS=("--config.mac.identity=-")
           fi
 

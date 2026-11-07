@@ -162,3 +162,29 @@ it('does not change CLI files when the gateway cannot start', async () => {
   await expect(result.current.select(agent, `gateway-model:${model.id}`)).rejects.toThrow('API gateway failed to start')
   expect([...disk]).toEqual([['pi-settings', '{"theme":"dark"}']])
 })
+
+it('offers native models and restricts gateway models for native-only antigravity-acp', async () => {
+  const agyAgent: AgentEntity = {
+    ...agent,
+    id: 'agy-agent',
+    name: 'Antigravity',
+    configuration: {
+      localRuntime: { presetId: 'antigravity-acp', protocol: 'acp', enabled: true, args: [], env: {} }
+    }
+  }
+  disk.set('antigravity-settings', '{"allowNonWorkspaceAccess":true}')
+  const { result } = renderHook(() =>
+    useLocalAgentModelSelection(agyAgent.configuration!.localRuntime, [
+      { id: 'claude-opus-5-5', name: 'Claude Opus 5.5' },
+      { id: 'gemini-4-argon', name: 'Gemini 4 Argon' }
+    ])
+  )
+  expect(result.current.sourceRestrictions?.native).toBeUndefined()
+  expect(result.current.sourceRestrictions?.gateway).toBeTruthy()
+  expect(result.current.models.map(({ id, source }) => ({ id, source }))).toEqual([
+    { id: 'claude-opus-5-5', source: 'native' },
+    { id: 'gemini-4-argon', source: 'native' }
+  ])
+  const selected = await result.current.select(agyAgent, 'claude-opus-5-5')
+  expect(selected?.configuration?.localRuntime?.nativeModel).toBe('claude-opus-5-5')
+})

@@ -55,6 +55,7 @@ export function updateNativeModelConfig(target: CliConfigTarget, content: string
         [['env', 'ANTHROPIC_MODEL'], model]
       ]
       break
+    case 'antigravity-settings':
     case 'codebuddy-settings':
     case 'opencode-config':
     case 'kilo-config':
