@@ -63,6 +63,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build internal packages
+        shell: bash
+        run: pnpm packages:build
+
       - name: Build Electron bundles (global edition)
         env:
           CHERRY_EDITION: global

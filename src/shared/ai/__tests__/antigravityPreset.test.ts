@@ -1,8 +1,8 @@
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { readProviderModelRegistry, readProviderRegistry } from '@cherrystudio/provider-registry/node'
 import { isPiCompatibleModel } from '@shared/ai/piModelCompatibility'
 import {
   ANTIGRAVITY_PROVIDER_ID,
@@ -58,8 +58,12 @@ describe('antigravity preset & registry', () => {
 
   it('registers google-antigravity as an external-cli provider with all 5 models in provider-registry', () => {
     const dataDir = resolve(process.cwd(), 'packages/provider-registry/data')
-    const bundledProviders = readProviderRegistry(resolve(dataDir, 'providers.json'))
-    const bundledProviderModels = readProviderModelRegistry(resolve(dataDir, 'provider-models.json'))
+    const bundledProviders = JSON.parse(readFileSync(resolve(dataDir, 'providers.json'), 'utf-8')) as {
+      providers: Array<Record<string, unknown>>
+    }
+    const bundledProviderModels = JSON.parse(readFileSync(resolve(dataDir, 'provider-models.json'), 'utf-8')) as {
+      overrides: Array<Record<string, unknown>>
+    }
 
     const provider = bundledProviders.providers.find((entry) => entry.id === 'google-antigravity')
     expect(provider).toBeDefined()
