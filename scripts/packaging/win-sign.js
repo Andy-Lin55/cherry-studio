@@ -94,7 +94,7 @@ function signFileWithRetry(options) {
 }
 
 exports.default = async function (configuration) {
-  if (process.env.WIN_SIGN) {
+  if (process.env.WIN_SIGN === 'true' || process.env.WIN_SIGN === '1') {
     const { path } = configuration
     if (configuration.path) {
       try {

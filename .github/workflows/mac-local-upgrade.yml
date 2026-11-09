@@ -182,7 +182,7 @@ jobs:
       - name: Package Windows installers (.exe)
         shell: bash
         env:
-          WIN_SIGN: "false"
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
           NODE_OPTIONS: --max-old-space-size=8192
         run: |
           pnpm exec electron-builder --win --x64 --publish never
