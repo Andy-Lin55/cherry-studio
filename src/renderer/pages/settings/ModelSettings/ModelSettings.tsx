@@ -258,6 +258,7 @@ const ModelSettings: FC<ModelSettingsProps> = ({
               providers={providers}
               filter={chatModelFilter}
               compact={compact}
+              includeAgentOnlyModels
               onSelect={onSelectDefault}
               placeholder={t('settings.models.empty')}
             />
@@ -279,6 +280,7 @@ const ModelSettings: FC<ModelSettingsProps> = ({
               providers={providers}
               filter={chatModelFilter}
               compact={compact}
+              includeAgentOnlyModels
               onSelect={onSelectQuick}
               placeholder={t('settings.models.empty')}
             />
@@ -307,6 +309,7 @@ const ModelSettings: FC<ModelSettingsProps> = ({
               providers={providers}
               filter={translateModelFilter}
               compact={compact}
+              includeAgentOnlyModels
               onSelect={onSelectTranslate}
               placeholder={t('settings.models.empty')}
             />

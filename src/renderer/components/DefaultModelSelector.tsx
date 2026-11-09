@@ -72,7 +72,7 @@ export const DefaultModelSelector: FC<DefaultModelSelectorProps> = ({
   compact,
   filter,
   isModelDisabled,
-  includeAgentOnlyModels,
+  includeAgentOnlyModels = true,
   noneOptionLabel,
   onSelect
 }) => (

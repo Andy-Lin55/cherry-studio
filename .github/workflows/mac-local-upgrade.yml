@@ -125,7 +125,6 @@ jobs:
             dist/*-mac-*.dmg
             dist/*-mac-*.zip
             dist/latest-mac.yml
-            scripts/upgrade-mac-local.sh
           if-no-files-found: error
           retention-days: 14
 
@@ -274,9 +273,32 @@ jobs:
               --prerelease
           fi
 
+          if [ -d dist/dist ]; then
+            mv dist/dist/* dist/ 2>/dev/null || true
+            rm -rf dist/dist
+          fi
+          ls -la dist/
+
           shopt -s nullglob
-          ASSETS=(dist/*-mac-*.dmg dist/*-mac-*.zip dist/latest-mac.yml dist/*.exe dist/*.blockmap dist/latest.yml scripts/upgrade-mac-local.sh)
+          CANDIDATES=(
+            dist/*-mac-*.dmg
+            dist/*-mac-*.zip
+            dist/latest-mac.yml
+            dist/*.exe
+            dist/*.blockmap
+            dist/latest.yml
+            scripts/upgrade-mac-local.sh
+          )
+          ASSETS=()
+          for f in "${CANDIDATES[@]}"; do
+            if [ -f "$f" ]; then
+              ASSETS+=("$f")
+            fi
+          done
+
           if [ ${#ASSETS[@]} -gt 0 ]; then
+            echo "Uploading ${#ASSETS[@]} assets to $TAG:"
+            for f in "${ASSETS[@]}"; do echo "  - $f"; done
             gh release upload "$TAG" "${ASSETS[@]}" --repo "$REPO" --clobber
           else
             echo "No build assets found to upload." >&2

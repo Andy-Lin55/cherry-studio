@@ -139,7 +139,7 @@ export function ResourceCreateWizard({
   const agentType = form.watch('agentType')
   const agentModelFilter = useAgentModelFilter(kind === 'agent' ? agentType : undefined)
   const activeModelFilter = kind === 'agent' ? agentModelFilter : modelFilter
-  const isModelSelectable = useIsModelSelectable({ includeAgentOnlyModels: kind === 'agent', enabled: open })
+  const isModelSelectable = useIsModelSelectable({ includeAgentOnlyModels: true, enabled: open })
   const { models: availableModels } = useModels({ enabled: true }, { fetchEnabled: open })
   const { defaultModel } = useDefaultModel({ enabled: open })
   const { provider: defaultModelProvider } = useProviderById(open ? defaultModel?.providerId : undefined)

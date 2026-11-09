@@ -559,6 +559,7 @@ function AssistantBasicFields({
       <CompactModelField
         form={form}
         name="modelId"
+        includeAgentOnlyModels
         label={t('common.model')}
         allowClear
         filter={modelFilter}
@@ -1142,6 +1143,7 @@ function ContextManagementFields({
           <CompactModelField
             form={form}
             name="contextCompressModelId"
+            includeAgentOnlyModels
             label={t('library.config.basic.context_compress_model')}
             allowClear
             emptyLabel={t('library.config.basic.context_compress_model_follow')}

@@ -189,6 +189,7 @@ export const ContextManagementSettings = () => {
                     model={compressModel}
                     providers={providers}
                     filter={chatModelFilter}
+                    includeAgentOnlyModels
                     onSelect={handleSelectCompressModel}
                     placeholder={t('settings.models.context_management.compress_model_follow')}
                     noneOptionLabel={t('settings.models.context_management.compress_model_follow')}

@@ -125,6 +125,7 @@ const GeneralSettings: FC = () => {
     cloudAvailabilityError: fallbackCloudAvailabilityError
   } = useModelSelectorData({
     filter: chatModelFilter,
+    includeAgentOnlyModels: true,
     selectedModelIds: configuredRetryFallbackModelIds,
     searchText: '',
     showTagFilter: false,
@@ -533,6 +534,7 @@ const GeneralSettings: FC = () => {
               <div className="flex w-[220px] min-w-0 shrink-0 items-center">
                 <ModelSelector
                   multiple={true}
+                  includeAgentOnlyModels
                   selectionType="id"
                   value={retryFallbackModelIds}
                   onSelect={(modelIds) => void setRetryFallbackModelIds(modelIds)}

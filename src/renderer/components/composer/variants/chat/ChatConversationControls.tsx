@@ -162,6 +162,7 @@ export function ChatConversationControls({
       ) : useMentionedModelSelector ? (
         <ModelSelector
           multiple
+          includeAgentOnlyModels
           value={mentionedModelSelectorValue}
           onSelect={handleMentionedModelSelect}
           open={mentionedModelSelectorOpen}
@@ -191,6 +192,7 @@ export function ChatConversationControls({
       ) : (
         <ModelSelector
           multiple={false}
+          includeAgentOnlyModels
           value={model}
           onSelect={onModelSelect}
           filter={chatModelFilter}
