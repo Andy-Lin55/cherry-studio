@@ -50,9 +50,30 @@ function normalizeTrashPath(filePath: string): string {
 }
 
 // Missing or destroyed sender window falls back to the unparented overload.
-function resolveSaveDialogParent(event: Electron.IpcMainInvokeEvent): Electron.BrowserWindow | undefined {
+function resolveDialogParent(event?: Electron.IpcMainInvokeEvent): Electron.BrowserWindow | undefined {
+  if (!event?.sender) return undefined
   const window = BrowserWindow.fromWebContents(event.sender)
   return window && !window.isDestroyed() ? window : undefined
+}
+const resolveSaveDialogParent = resolveDialogParent
+
+export function sanitizeOpenDialogFilters(filters?: Electron.FileFilter[]): Electron.FileFilter[] | undefined {
+  if (!filters || filters.length === 0) return undefined
+
+  const sanitized = filters
+    .map((filter) => {
+      const extensions = (filter.extensions || [])
+        .map((ext) => ext.replace(/^\./, '').trim())
+        .filter((ext) => ext.length > 0 && ext !== '*')
+
+      return {
+        name: filter.name,
+        extensions
+      }
+    })
+    .filter((filter) => filter.extensions.length > 0)
+
+  return sanitized.length > 0 ? sanitized : undefined
 }
 
 class FileStorage {
@@ -157,16 +178,25 @@ class FileStorage {
   }
 
   public selectFile = async (
-    _: Electron.IpcMainInvokeEvent,
+    event: Electron.IpcMainInvokeEvent,
     options?: OpenDialogOptions
   ): Promise<FileMetadata[] | null> => {
     const defaultOptions: OpenDialogOptions = {
       properties: ['openFile']
     }
 
-    const dialogOptions = { ...defaultOptions, ...options }
+    const dialogOptions: OpenDialogOptions = { ...defaultOptions, ...options }
+    if (dialogOptions.filters) {
+      dialogOptions.filters = sanitizeOpenDialogFilters(dialogOptions.filters)
+      if (!dialogOptions.filters || dialogOptions.filters.length === 0) {
+        delete dialogOptions.filters
+      }
+    }
 
-    const result = await dialog.showOpenDialog(dialogOptions)
+    const parent = resolveDialogParent(event)
+    const result = parent
+      ? await dialog.showOpenDialog(parent, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions)
 
     if (result.canceled || result.filePaths.length === 0) {
       return null
@@ -686,16 +716,25 @@ class FileStorage {
   }
 
   public open = async (
-    _: Electron.IpcMainInvokeEvent,
+    event: Electron.IpcMainInvokeEvent,
     options: OpenDialogOptions
   ): Promise<{ fileName: string; filePath: string; content?: Buffer; size: number } | null> => {
     try {
-      const result: OpenDialogReturnValue = await dialog.showOpenDialog({
+      const dialogOptions: OpenDialogOptions = {
         title: t('dialog.open_file'),
         properties: ['openFile'],
-        filters: [{ name: t('dialog.all_files'), extensions: ['*'] }],
         ...options
-      })
+      }
+      if (dialogOptions.filters) {
+        dialogOptions.filters = sanitizeOpenDialogFilters(dialogOptions.filters)
+        if (!dialogOptions.filters || dialogOptions.filters.length === 0) {
+          delete dialogOptions.filters
+        }
+      }
+      const parent = resolveDialogParent(event)
+      const result: OpenDialogReturnValue = parent
+        ? await dialog.showOpenDialog(parent, dialogOptions)
+        : await dialog.showOpenDialog(dialogOptions)
 
       if (!result.canceled && result.filePaths.length > 0) {
         const filePath = result.filePaths[0]
@@ -791,13 +830,17 @@ class FileStorage {
     return false
   }
 
-  public selectFolder = async (_: Electron.IpcMainInvokeEvent, options: OpenDialogOptions): Promise<string | null> => {
+  public selectFolder = async (event: Electron.IpcMainInvokeEvent, options: OpenDialogOptions): Promise<string | null> => {
     try {
-      const result: OpenDialogReturnValue = await dialog.showOpenDialog({
+      const dialogOptions: OpenDialogOptions = {
         title: t('dialog.select_folder'),
         properties: ['openDirectory'],
         ...options
-      })
+      }
+      const parent = resolveDialogParent(event)
+      const result: OpenDialogReturnValue = parent
+        ? await dialog.showOpenDialog(parent, dialogOptions)
+        : await dialog.showOpenDialog(dialogOptions)
 
       if (!result.canceled && result.filePaths.length > 0) {
         return result.filePaths[0]

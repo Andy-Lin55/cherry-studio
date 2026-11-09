@@ -44,23 +44,32 @@ export const useFiles = (props?: Props) => {
         ? ['openFile', 'multiSelections']
         : ['openFile']
 
-      // when the number of extensions is greater than 20, use *.* to avoid selecting window lag
-      const useAllFiles = extensions.length > 20
+      const hasWildcard = extensions.includes('*') || extensions.includes('.*')
+      const useAllFiles = extensions.length > 20 || hasWildcard || extensions.length === 0
+
+      const validExts = extensions
+        .map((i) => i.replace(/^\./, '').trim())
+        .filter((i) => i.length > 0 && i !== '*')
+
+      const dialogFilters =
+        !useAllFiles && validExts.length > 0
+          ? [
+              {
+                name: 'Files',
+                extensions: validExts
+              }
+            ]
+          : undefined
 
       setSelecting(true)
       const _files = await window.api.file.select({
         properties: selectProps,
-        filters: [
-          {
-            name: 'Files',
-            extensions: useAllFiles ? ['*'] : extensions.map((i) => i.replace('.', ''))
-          }
-        ]
+        ...(dialogFilters ? { filters: dialogFilters } : {})
       })
       setSelecting(false)
 
       if (_files) {
-        if (!useAllFiles) {
+        if (!useAllFiles || hasWildcard) {
           setFiles((currentFiles) => [...currentFiles, ..._files])
           return _files
         }

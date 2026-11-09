@@ -204,4 +204,58 @@ describe('AttachmentToolRuntime', () => {
 
     expect(inputAdapter.focus).toHaveBeenCalledTimes(1)
   })
+
+  it('omits filters when wildcard * is present (allowing all files on macOS/Win)', async () => {
+    const launcher = createLauncherApi()
+    const setFiles = vi.fn()
+
+    render(
+      <AttachmentToolRuntime
+        launcher={launcher}
+        couldAddImageFile
+        extensions={['.txt', '*']}
+        files={[]}
+        setFiles={setFiles}
+      />
+    )
+
+    await waitFor(() => expect(launcher.registerLaunchers).toHaveBeenCalled())
+
+    const [attachmentLauncher] = vi.mocked(launcher.registerLaunchers).mock.calls[0][0]
+    await act(async () => {
+      attachmentLauncher.action?.({ source: 'popover', quickPanel: {} as never })
+    })
+
+    expect(window.api.file.select).toHaveBeenCalledWith({
+      properties: ['openFile', 'multiSelections']
+    })
+    expect(setFiles).toHaveBeenCalled()
+  })
+
+  it('omits filters when more than 20 extensions are supplied', async () => {
+    const launcher = createLauncherApi()
+    const setFiles = vi.fn()
+    const manyExts = Array.from({ length: 25 }, (_, i) => `.ext${i}`)
+
+    render(
+      <AttachmentToolRuntime
+        launcher={launcher}
+        couldAddImageFile
+        extensions={manyExts}
+        files={[]}
+        setFiles={setFiles}
+      />
+    )
+
+    await waitFor(() => expect(launcher.registerLaunchers).toHaveBeenCalled())
+
+    const [attachmentLauncher] = vi.mocked(launcher.registerLaunchers).mock.calls[0][0]
+    await act(async () => {
+      attachmentLauncher.action?.({ source: 'popover', quickPanel: {} as never })
+    })
+
+    expect(window.api.file.select).toHaveBeenCalledWith({
+      properties: ['openFile', 'multiSelections']
+    })
+  })
 })

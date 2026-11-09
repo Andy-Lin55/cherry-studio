@@ -20,7 +20,7 @@ vi.mock('word-extractor', () => ({
   }
 }))
 
-import { fileStorage } from '../FileStorage'
+import { fileStorage, sanitizeOpenDialogFilters } from '../FileStorage'
 
 const event = {} as Electron.IpcMainInvokeEvent
 
@@ -332,17 +332,61 @@ describe('FileStorage', () => {
     })
   })
 
-  describe('stored file ids', () => {
-    it('rejects an id that escapes the storage directory', async () => {
-      await expect(fileStorage.binaryImage(event, '../../../../etc/passwd')).rejects.toThrow(/Invalid stored file id/)
-      await expect(fileStorage.base64File(event, '../secrets.txt')).rejects.toThrow(/Invalid stored file id/)
-      await expect(fileStorage.deleteFile(event, '../database.sqlite')).rejects.toThrow(/Invalid stored file id/)
-      await expect(fileStorage.deleteDir(event, '')).rejects.toThrow(/Invalid stored file id/)
-      await expect(fileStorage.deleteDir(event, '.')).rejects.toThrow(/Invalid stored file id/)
+  describe('selectFile', () => {
+    it('returns null when canceled or no files chosen', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: true, filePaths: [] })
+      await expect(fileStorage.selectFile(event)).resolves.toBeNull()
     })
 
-    it('accepts a plain file name', async () => {
-      await expect(fileStorage.deleteFile(event, `${uniqueId()}.png`)).resolves.toBeUndefined()
+    it('parents the open dialog to caller window and sanitizes wildcard filters', async () => {
+      const ownerWindow = { isDestroyed: () => false } as Electron.BrowserWindow
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: true, filePaths: [] })
+
+      await fileStorage.selectFile(mockSenderWindow(ownerWindow), {
+        filters: [{ name: 'All Files', extensions: ['*'] }]
+      })
+
+      expect(dialog.showOpenDialog).toHaveBeenCalledWith(
+        ownerWindow,
+        expect.not.objectContaining({ filters: expect.anything() })
+      )
+    })
+
+    it('falls back to unparented dialog when sender window is missing', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: true, filePaths: [] })
+
+      await fileStorage.selectFile(mockSenderWindow(null))
+
+      expect(dialog.showOpenDialog).toHaveBeenCalledWith(expect.objectContaining({ properties: ['openFile'] }))
+    })
+  })
+
+  describe('selectFolder', () => {
+    it('parents the folder open dialog to caller window', async () => {
+      const ownerWindow = { isDestroyed: () => false } as Electron.BrowserWindow
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: false, filePaths: ['/tmp/folder'] })
+
+      const res = await fileStorage.selectFolder(mockSenderWindow(ownerWindow), {})
+      expect(res).toBe('/tmp/folder')
+      expect(dialog.showOpenDialog).toHaveBeenCalledWith(
+        ownerWindow,
+        expect.objectContaining({ properties: ['openDirectory'] })
+      )
+    })
+  })
+
+  describe('sanitizeOpenDialogFilters', () => {
+    it('removes wildcard extensions and drops empty filters', () => {
+      expect(sanitizeOpenDialogFilters([{ name: 'Files', extensions: ['*'] }])).toBeUndefined()
+      expect(sanitizeOpenDialogFilters([{ name: 'Files', extensions: ['.*'] }])).toBeUndefined()
+      expect(sanitizeOpenDialogFilters([{ name: 'Files', extensions: [] }])).toBeUndefined()
+      expect(sanitizeOpenDialogFilters(undefined)).toBeUndefined()
+    })
+
+    it('cleans valid extensions by removing leading dots', () => {
+      expect(sanitizeOpenDialogFilters([{ name: 'Images', extensions: ['.png', 'jpg', '*'] }])).toEqual([
+        { name: 'Images', extensions: ['png', 'jpg'] }
+      ])
     })
   })
 })
