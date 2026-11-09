@@ -70,8 +70,9 @@ if pgrep -x "Cherry Studio" >/dev/null 2>&1; then
     sleep 1
   done
   if pgrep -x "Cherry Studio" >/dev/null 2>&1; then
-    echo "Error: Cherry Studio is still running. Please quit Cherry Studio (Cmd+Q) and re-run." >&2
-    exit 1
+    echo "==> Terminating lingering Cherry Studio process..."
+    pkill -x "Cherry Studio" 2>/dev/null || true
+    sleep 2
   fi
 fi
 
@@ -117,9 +118,10 @@ if [[ "$MODE" == "source" ]]; then
   echo "==> Building Cherry Studio (${ARCH}) from source at ${REPO_ROOT}..."
   cd "$REPO_ROOT"
   pnpm install --frozen-lockfile
-  CHERRY_EDITION=global SENTRY_SOURCE_MAP_UPLOAD=false pnpm exec electron-vite build
+  pnpm packages:build
+  NODE_OPTIONS="--max-old-space-size=8192" CHERRY_EDITION=global SENTRY_SOURCE_MAP_UPLOAD=false pnpm exec electron-vite build
   pnpm run build:utility-process
-  CSC_FOR_PULL_REQUEST=true pnpm exec electron-builder --mac "--${ARCH}" --dir "--config.mac.identity=-" --publish never
+  CSC_FOR_PULL_REQUEST=true NODE_OPTIONS="--max-old-space-size=8192" pnpm exec electron-builder --mac "--${ARCH}" --dir "--config.mac.identity=-" --publish never
 
   BUILT_APP="${REPO_ROOT}/dist/mac-${ARCH}/Cherry Studio.app"
   if [[ ! -d "$BUILT_APP" ]]; then
