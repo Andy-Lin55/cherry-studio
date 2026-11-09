@@ -1,4 +1,4 @@
-name: MacBook Build & Local Upgrade Release
+name: Build & Release (macOS & Windows)
 
 on:
   push:
@@ -6,7 +6,16 @@ on:
       - "feat/antigravity-acp-*"
   workflow_dispatch:
     inputs:
-      arch:
+      platform:
+        description: "Target platform to build"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - mac
+          - windows
+      mac_arch:
         description: "macOS target architecture"
         required: true
         default: "both"
@@ -26,7 +35,8 @@ permissions:
 
 jobs:
   build-mac:
-    name: Build macOS (${{ inputs.arch || 'both' }})
+    name: Build macOS (${{ inputs.mac_arch || 'both' }})
+    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'mac' || inputs.platform == null }}
     runs-on: macos-latest
     timeout-minutes: 60
 
@@ -88,7 +98,7 @@ jobs:
           CSC_FOR_PULL_REQUEST: "true"
           NODE_OPTIONS: --max-old-space-size=8192
         run: |
-          TARGET_ARCH="${{ inputs.arch || 'both' }}"
+          TARGET_ARCH="${{ inputs.mac_arch || 'both' }}"
           ARCH_ARGS=(--arm64 --x64)
           if [ "$TARGET_ARCH" = "arm64" ]; then
             ARCH_ARGS=(--arm64)
@@ -119,8 +129,102 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish rolling GitHub release (mac-acp-latest)
-        if: ${{ github.event_name == 'push' || inputs.publish_release == true }}
+  build-win:
+    name: Build Windows (x64)
+    if: ${{ github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'windows' || inputs.platform == null }}
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: ".node-version"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v5
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build internal packages
+        shell: bash
+        run: pnpm packages:build
+
+      - name: Build Electron bundles (global edition)
+        env:
+          CHERRY_EDITION: global
+          NODE_OPTIONS: --max-old-space-size=8192
+          SENTRY_SOURCE_MAP_UPLOAD: "false"
+        run: |
+          pnpm run typecheck
+          pnpm exec electron-vite build
+          pnpm run build:utility-process
+
+      - name: Package Windows installers (.exe)
+        shell: bash
+        env:
+          WIN_SIGN: "false"
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: |
+          pnpm exec electron-builder --win --x64 --publish never
+          ls -lh dist/
+
+      - name: Upload Windows build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: cherry-studio-windows-${{ github.sha }}
+          path: |
+            dist/*.exe
+            dist/*.blockmap
+            dist/latest.yml
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-release:
+    name: Publish rolling GitHub release (mac-acp-latest)
+    needs: [build-mac, build-win]
+    if: ${{ always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && (github.event_name == 'push' || inputs.publish_release == true) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Download macOS build artifacts
+        uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: cherry-studio-macos-${{ github.sha }}
+          path: dist/
+          merge-multiple: true
+
+      - name: Download Windows build artifacts
+        uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: cherry-studio-windows-${{ github.sha }}
+          path: dist/
+          merge-multiple: true
+
+      - name: Publish rolling GitHub release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -131,23 +235,25 @@ jobs:
           TAG="mac-acp-latest"
           SHORT_SHA="${SHA:0:7}"
           NOTES=$(cat <<EOF
-          ## Cherry Studio — Antigravity ACP macOS Build (\`$SHORT_SHA\`)
+          ## Cherry Studio — Antigravity ACP Build (\`$SHORT_SHA\`)
 
           Built from branch \`$BRANCH\` (\`$SHA\`) with compliant Google Antigravity CLI (\`agy acp\`) support.
+          Includes in-app update checks and one-click upgrades for both macOS and Windows.
 
-          ### One-Command MacBook Local Upgrade (Preserves All Existing Chats & Data)
-          Run in Terminal on your MacBook (Apple Silicon \`arm64\` or Intel \`x64\`):
-          \`\`\`bash
-          curl -fsSL https://raw.githubusercontent.com/$REPO/$BRANCH/scripts/upgrade-mac-local.sh | bash
-          \`\`\`
+          ### Windows Installation & Update
+          - **Installer:** Download \`Cherry-Studio-*-x64-setup.exe\` below to install or update.
+          - **Portable:** Download \`Cherry-Studio-*-x64-portable.exe\` for portable execution.
+          - **In-App Update:** In **Settings → About**, click **Check for Updates** / 检查更新 to auto-update.
 
-          ### Manual Upgrade via \`.dmg\`
-          1. Download \`Cherry-Studio-*-mac-arm64.dmg\` (Apple Silicon M1/M2/M3/M4) or \`Cherry-Studio-*-mac-x64.dmg\` (Intel) below.
-          2. Quit Cherry Studio, open the \`.dmg\`, drag **Cherry Studio.app** to **/Applications** (choose **Replace** — your data in \`~/Library/Application Support/CherryStudio\` stays intact).
-          3. Clear macOS Gatekeeper quarantine on ad-hoc signed builds:
-             \`\`\`bash
-             xattr -cr "/Applications/Cherry Studio.app"
-             \`\`\`
+          ### MacBook / macOS Installation & Update
+          - **One-Command Upgrade (Recommended):**
+            \`\`\`bash
+            curl -fsSL https://raw.githubusercontent.com/$REPO/$BRANCH/scripts/upgrade-mac-local.sh | bash
+            \`\`\`
+          - **Manual .dmg:**
+            1. Download \`Cherry-Studio-*-mac-arm64.dmg\` (Apple Silicon) or \`Cherry-Studio-*-mac-x64.dmg\` (Intel) below.
+            2. Quit Cherry Studio, drag to **/Applications** (Replace).
+            3. Run \`xattr -cr "/Applications/Cherry Studio.app"\` to clear Gatekeeper quarantine.
           EOF
           )
 
@@ -156,18 +262,23 @@ jobs:
 
           if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
             gh release edit "$TAG" --repo "$REPO" \
-              --title "Cherry Studio macOS (Antigravity ACP — $SHORT_SHA)" \
+              --title "Cherry Studio (Antigravity ACP — $SHORT_SHA)" \
               --notes "$NOTES" \
               --prerelease
           else
             gh release create "$TAG" \
               --repo "$REPO" \
               --target "$SHA" \
-              --title "Cherry Studio macOS (Antigravity ACP — $SHORT_SHA)" \
+              --title "Cherry Studio (Antigravity ACP — $SHORT_SHA)" \
               --notes "$NOTES" \
               --prerelease
           fi
 
           shopt -s nullglob
-          ASSETS=(dist/*-mac-*.dmg dist/*-mac-*.zip dist/latest-mac.yml scripts/upgrade-mac-local.sh)
-          gh release upload "$TAG" "${ASSETS[@]}" --repo "$REPO" --clobber
+          ASSETS=(dist/*-mac-*.dmg dist/*-mac-*.zip dist/latest-mac.yml dist/*.exe dist/*.blockmap dist/latest.yml scripts/upgrade-mac-local.sh)
+          if [ ${#ASSETS[@]} -gt 0 ]; then
+            gh release upload "$TAG" "${ASSETS[@]}" --repo "$REPO" --clobber
+          else
+            echo "No build assets found to upload." >&2
+            exit 1
+          fi

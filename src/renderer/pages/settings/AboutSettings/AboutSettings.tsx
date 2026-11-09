@@ -202,7 +202,7 @@ const AboutSettings: FC = () => {
               <button
                 type="button"
                 aria-label={t('settings.about.releases.title')}
-                onClick={() => onOpenWebsite('https://github.com/CherryHQ/cherry-studio/releases')}
+                onClick={() => onOpenWebsite('https://github.com/Andy-Lin55/cherry-studio/releases')}
                 className="mt-1.5">
                 <Badge className="cursor-pointer rounded-md border-primary/20 bg-primary/10 px-1.5 py-0 text-[11px] leading-4 text-primary transition-colors hover:bg-primary/15">
                   v{version}
@@ -211,37 +211,37 @@ const AboutSettings: FC = () => {
             </div>
           </div>
 
-          {!isPortable && (
-            <div className="flex shrink-0 items-center justify-end">
-              <Button
-                size="sm"
-                variant={isUpdateReady ? 'default' : 'outline'}
-                loading={appUpdateState.checking}
-                onClick={onCheckUpdate}
-                disabled={appUpdateState.downloading}
-                className={cn(
-                  'w-fit! min-w-0! shrink-0',
-                  isUpdateReady &&
-                    'bg-success text-primary-foreground hover:bg-success/90 dark:bg-success dark:text-primary-foreground dark:hover:bg-success/90'
-                )}>
-                {appUpdateState.downloading
-                  ? t('settings.about.downloading')
-                  : appUpdateState.available
-                    ? t('settings.about.checkUpdate.available')
+          <div className="flex shrink-0 items-center justify-end">
+            <Button
+              size="sm"
+              variant={isUpdateReady ? 'default' : 'outline'}
+              loading={appUpdateState.checking}
+              onClick={onCheckUpdate}
+              disabled={appUpdateState.downloading}
+              className={cn(
+                'w-fit! min-w-0! shrink-0',
+                isUpdateReady &&
+                  'bg-success text-primary-foreground hover:bg-success/90 dark:bg-success dark:text-primary-foreground dark:hover:bg-success/90'
+              )}>
+              {appUpdateState.downloading
+                ? t('settings.about.downloading')
+                : appUpdateState.available
+                  ? t('settings.about.checkUpdate.available')
+                  : isUpdateReady
+                    ? t('settings.about.install')
                     : t('settings.about.checkUpdate.label')}
-              </Button>
-            </div>
-          )}
+            </Button>
+          </div>
         </div>
+
+        <Divider className="my-3" />
+        <SettingRow id="setting-about-auto-check-update" className="scroll-mt-6 gap-3">
+          <SettingRowTitle>{t('settings.general.auto_check_update.title')}</SettingRowTitle>
+          <Switch checked={autoCheckUpdate} onCheckedChange={(v) => setAutoCheckUpdate(v)} />
+        </SettingRow>
 
         {!isPortable && (
           <>
-            <Divider className="my-3" />
-            <SettingRow id="setting-about-auto-check-update" className="scroll-mt-6 gap-3">
-              <SettingRowTitle>{t('settings.general.auto_check_update.title')}</SettingRowTitle>
-              <Switch checked={autoCheckUpdate} onCheckedChange={(v) => setAutoCheckUpdate(v)} />
-            </SettingRow>
-
             <Divider className="my-3" />
             <SettingRow className="flex-nowrap gap-6">
               <div className="flex min-w-0 flex-1 items-center justify-between gap-6">

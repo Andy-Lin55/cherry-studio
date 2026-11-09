@@ -114,6 +114,7 @@ export class AppUpdaterService extends BaseService {
     // Auto-install on quit can cause issues: unexpected updates on restart,
     // corruption if system shuts down during install, or app uninstall on force shutdown
     autoUpdater.autoInstallOnAppQuit = false
+    autoUpdater.allowPrerelease = true
 
     this.registerAutoUpdaterListeners()
 
@@ -144,8 +145,7 @@ export class AppUpdaterService extends BaseService {
     })
 
     // Development builds skip automatic checks but still support manual checks.
-    // Portable builds do not perform update checks.
-    if (!app.isPackaged || this.isPortable()) {
+    if (!app.isPackaged) {
       return
     }
     this.scheduleNextUpdateCheck(INITIAL_CHECK_DELAY_MS)
@@ -310,13 +310,13 @@ export class AppUpdaterService extends BaseService {
     | { status: 'current'; currentVersion: string }
     | { status: 'available'; currentVersion: string; version: string }
   > {
-    if (this.isPortable()) return { status: 'unsupported' }
     const { currentVersion, updateChannel, updateHeaders } = await this.getUpdateRequest()
     const updater = new ReleaseNotesUpdater()
     updater.logger = logger as Logger
     updater.forceDevUpdateConfig = !app.isPackaged
     updater.autoDownload = false
     updater.autoInstallOnAppQuit = false
+    updater.allowPrerelease = true
     updater.requestHeaders = updateHeaders
     updater.channel = updateChannel
     updater.allowDowngrade = false
@@ -335,6 +335,7 @@ export class AppUpdaterService extends BaseService {
       updater.forceDevUpdateConfig = !app.isPackaged
       updater.autoDownload = false
       updater.autoInstallOnAppQuit = false
+      updater.allowPrerelease = true
       updater.requestHeaders = updateHeaders
       updater.channel = updateChannel
       updater.allowDowngrade = false
@@ -394,10 +395,6 @@ export class AppUpdaterService extends BaseService {
     }
   }
 
-  private isPortable(): boolean {
-    return isWin && 'PORTABLE_EXECUTABLE_DIR' in process.env
-  }
-
   /**
    * Throwing core of the update check: updater setup → check → (manual) download
    * trigger. A check/network failure REJECTS so callers that need a failure
@@ -408,13 +405,6 @@ export class AppUpdaterService extends BaseService {
    */
   private async performUpdateCheck() {
     void application.get('AnalyticsService').trackAppUpdate()
-
-    if (this.isPortable()) {
-      return {
-        currentVersion: app.getVersion(),
-        updateInfo: null
-      }
-    }
 
     await this.configureUpdaterForCheck()
 
