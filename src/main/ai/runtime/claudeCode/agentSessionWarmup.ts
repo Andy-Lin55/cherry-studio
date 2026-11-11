@@ -52,6 +52,7 @@ import type { AgentSessionUsageCapture } from '../types'
 import type { WarmQueryRequest } from './ClaudeCodeWarmQueryManager'
 import { isAnthropicOfficialHost, with1mSuffix } from './contextWindowSuffix'
 import { createClaudeCodeQueryOptions } from './queryOptions'
+import { isCompatibleClaudeCodeResumeToken } from './resumeToken'
 import {
   buildClaudeCodeSessionSettings,
   buildSkillWhitelist,
@@ -545,8 +546,9 @@ export async function buildClaudeCodeQueryRequestForAgentSession(
       icon: agent.configuration?.avatar ?? null
     }
   )
-  const resumeSessionId =
+  const rawResumeSessionId =
     effectiveResume ?? agentSessionMessageService.getLastRuntimeResumeToken(session.id) ?? undefined
+  const resumeSessionId = isCompatibleClaudeCodeResumeToken(rawResumeSessionId) ? rawResumeSessionId : undefined
   const effectiveLanguage = getEffectiveAgentLanguage(agent)
   const settings = mergeRuntimeSettings(
     await buildClaudeCodeSessionSettings(
@@ -597,7 +599,8 @@ export async function buildClaudeCodeQueryRequestForAgentSession(
   const options = createClaudeCodeQueryOptions({
     modelId: sdkModelId,
     settings,
-    effectiveResume: resumeSessionId ?? settings.resume
+    effectiveResume:
+      resumeSessionId ?? (isCompatibleClaudeCodeResumeToken(settings.resume) ? settings.resume : undefined)
   })
 
   if (options.includePartialMessages === undefined) {

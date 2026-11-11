@@ -43,4 +43,26 @@ describe('createClaudeCodeQueryOptions', () => {
     expect(opts).not.toHaveProperty('mcpToolMetadata')
     expect(opts.spawnClaudeCodeProcess).toBe(spawnClaudeCodeProcess)
   })
+
+  it('filters out incompatible resume tokens like Antigravity tokens or invalid IDs', () => {
+    const optsWithAgy = createClaudeCodeQueryOptions({
+      modelId: 'sonnet',
+      settings: { resume: 'agy-acp:63f130fc-b468-4a1d-b3ed-6cdba10cb2db' }
+    })
+    expect(optsWithAgy.resume).toBeUndefined()
+
+    const optsWithColon = createClaudeCodeQueryOptions({
+      modelId: 'sonnet',
+      settings: {},
+      effectiveResume: 'invalid:token:format'
+    })
+    expect(optsWithColon.resume).toBeUndefined()
+
+    const optsValid = createClaudeCodeQueryOptions({
+      modelId: 'sonnet',
+      settings: {},
+      effectiveResume: 'valid-session-id-12345'
+    })
+    expect(optsValid.resume).toBe('valid-session-id-12345')
+  })
 })

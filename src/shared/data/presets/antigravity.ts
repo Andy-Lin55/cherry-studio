@@ -9,6 +9,13 @@
  * credentials and upstream traffic strictly to the official `agy` binary.
  */
 export const ANTIGRAVITY_PROVIDER_ID = 'google-antigravity' as const
+export const ANTIGRAVITY_RESUME_TOKEN_PREFIX = 'agy-acp:'
+
+/** True when a resume token belongs to Google Antigravity ACP. */
+export function isAntigravityResumeToken(token?: string | null): boolean {
+  if (!token || typeof token !== 'string') return false
+  return token.startsWith(ANTIGRAVITY_RESUME_TOKEN_PREFIX)
+}
 
 export type AntigravityThoughtLevel = 'low' | 'medium' | 'high'
 

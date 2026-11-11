@@ -4,6 +4,7 @@ import type { Options } from '@anthropic-ai/claude-agent-sdk'
 import { application } from '@application'
 
 import { spawnClaudeCodeProcess } from './ClaudeCodeProcessManager'
+import { isCompatibleClaudeCodeResumeToken } from './resumeToken'
 import type { ClaudeCodeSettings } from './types'
 
 /** An explicit child environment is authoritative, even when it omits the config override. */
@@ -42,15 +43,19 @@ export function createClaudeCodeQueryOptions({
     warmQueryInitializeTimeoutMs: _warmQueryInitializeTimeoutMs,
     // oxlint-disable-next-line no-unused-vars
     mcpToolMetadata: _mcpToolMetadata,
+    resume: rawResume,
     ...settingsRest
   } = settings
+
+  const resumeCandidate = effectiveResume ?? rawResume
+  const resume = isCompatibleClaudeCodeResumeToken(resumeCandidate) ? resumeCandidate : undefined
 
   const opts: Partial<Options> = {
     ...settingsRest,
     spawnClaudeCodeProcess,
     model: modelId,
     ...(abortController ? { abortController } : {}),
-    resume: effectiveResume ?? settings.resume
+    ...(resume ? { resume } : {})
   }
 
   if (responseFormat?.type === 'json' && responseFormat.schema) {

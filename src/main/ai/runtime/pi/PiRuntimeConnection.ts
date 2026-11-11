@@ -47,6 +47,7 @@ import { normalizePiDisabledToolId } from '@shared/ai/piBuiltinTools'
 import { LEGACY_DSH_TOOL_PREFIX } from '@shared/ai/retiredAgentRuntime'
 import { buildFunctionCallToolName } from '@shared/ai/tools/mcpToolName'
 import type { AgentPermissionMode } from '@shared/data/api/schemas/agents'
+import { isAntigravityResumeToken } from '@shared/data/presets/antigravity'
 import { isUniqueModelId, parseUniqueModelId, type UniqueModelId } from '@shared/data/types/model'
 import type { AgentTaskEventPartData } from '@shared/data/types/uiParts'
 import { AsyncEventQueue } from '@shared/utils/async'
@@ -269,11 +270,11 @@ export class PiRuntimeConnection implements AgentRuntimeConnection {
     if (finalSnapshot.signature !== initialSnapshot.signature)
       throw new Error('Pi configuration changed during startup')
     this.connectionSignature = initialSnapshot.signature
-    this.context = preparePiBranch(
-      this.input.sessionId,
-      this.input.branchHead,
-      this.input.resumeToken ?? this.input.nativeSessionId
-    )
+    const rawResumeToken = isAntigravityResumeToken(this.input.resumeToken) ? undefined : this.input.resumeToken
+    const rawNativeSessionId = isAntigravityResumeToken(this.input.nativeSessionId)
+      ? undefined
+      : this.input.nativeSessionId
+    this.context = preparePiBranch(this.input.sessionId, this.input.branchHead, rawResumeToken ?? rawNativeSessionId)
     const nativeId = this.context.nativeThreadId
     if (!nativeId || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(nativeId)) throw new Error('Invalid Pi session identity')
     let files: string[]

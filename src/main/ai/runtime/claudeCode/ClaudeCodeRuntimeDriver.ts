@@ -10,23 +10,27 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk'
 import type { ImageBlockParam } from '@anthropic-ai/sdk/resources/messages'
 
+import { connectAntigravityAgentSession, validateAntigravityAgentSession } from '@main/ai/runtime/antigravity'
+import { isAntigravityModelId, isAntigravityResumeToken } from '@shared/data/presets/antigravity'
 import { isUniqueModelId } from '@shared/data/types/model'
-import { isAntigravityModelId } from '@shared/data/presets/antigravity'
-import {
-  connectAntigravityAgentSession,
-  validateAntigravityAgentSession
-} from '@main/ai/runtime/antigravity'
+
+import { isCompatibleClaudeCodeResumeToken } from './resumeToken'
 
 type BetaUsage = SDKResultMessage['usage']
 import { application } from '@application'
 import { agentService } from '@data/services/AgentService'
+import { readAgentSessionPath } from '@data/services/agentSessionMessageTree'
 import { agentSessionService } from '@data/services/AgentSessionService'
 import { modelService } from '@data/services/ModelService'
 import { loggerService } from '@logger'
 import { collectAssistantFileAttachments } from '@main/ai/messages/assistantFileAttachments'
 import { collectFileAttachments, prepareChatMessages } from '@main/ai/messages/attachmentRouting'
 import { materializeNativeFilePart } from '@main/ai/messages/fileProcessor'
-import { appendAgentAttachmentPaths, wrapAgentSessionDeliveryContent } from '@main/ai/runtime/agentUserContent'
+import {
+  appendAgentAttachmentPaths,
+  buildAgentUserContent,
+  wrapAgentSessionDeliveryContent
+} from '@main/ai/runtime/agentUserContent'
 import { wrapSteerReminder } from '@main/ai/steerReminder'
 import type { ClaudeAgentToolPolicySnapshot } from '@main/ai/tools/adapters/claudeCode/agentTools'
 import {
@@ -295,6 +299,8 @@ class ClaudeCodeRuntimeConnection implements AgentRuntimeConnection {
   private approvalEmitter?: ToolApprovalEmitterHolder
   private mcpToolMetadata?: Record<string, McpToolDisplayMetadata>
   private resumeToken?: string
+  private pendingHistoryPreamble?: string
+  private conversationHistorySeeded = false
   private lastMainAssistantUuid?: string
   private toolPolicySnapshot?: ClaudeAgentToolPolicySnapshot
   private steerHolder?: SteerHolder
@@ -322,10 +328,33 @@ class ClaudeCodeRuntimeConnection implements AgentRuntimeConnection {
   constructor(input: AgentRuntimeConnectInput) {
     if (!isUniqueModelId(input.modelId)) throw new Error('Provider model required')
     this.input = { ...input, modelId: input.modelId }
-    this.resumeToken = input.resumeToken
+    this.resumeToken = isCompatibleClaudeCodeResumeToken(input.resumeToken) ? input.resumeToken : undefined
   }
 
   async start(): Promise<this> {
+    if (isAntigravityResumeToken(this.input.resumeToken)) {
+      const db = application.get('DbService').getDb()
+      const priorRows = readAgentSessionPath(db, this.input.sessionId, this.input.branchHead)
+      const validPriorMessages = priorRows.filter((r) => r.role === 'user' || r.role === 'assistant')
+      if (validPriorMessages.length > 0) {
+        const historyLines: string[] = []
+        for (const row of validPriorMessages) {
+          const text = buildAgentUserContent(row as never).trim()
+          if (text) {
+            historyLines.push(`${row.role === 'user' ? 'User' : 'Assistant'}: ${text}`)
+          }
+        }
+        if (historyLines.length > 0) {
+          this.pendingHistoryPreamble = [
+            '<conversation_history>',
+            'The conversation so far before switching to this model:',
+            ...historyLines,
+            '</conversation_history>'
+          ].join('\n')
+        }
+      }
+    }
+
     // Route with the host-chosen model, not a fresh DB read: a live turn's connection must serve
     // the model captured when that turn was created, even if the agent was edited since.
     const request = await buildClaudeCodeQueryRequestForAgentSession(
@@ -344,9 +373,12 @@ class ClaudeCodeRuntimeConnection implements AgentRuntimeConnection {
 
     const traceEnv = await this.prepareTraceEnv()
     const coldProcessDiagnostics = createClaudeCodeProcessDiagnostics()
+    const nativeSessionId = isCompatibleClaudeCodeResumeToken(this.input.nativeSessionId)
+      ? this.input.nativeSessionId
+      : undefined
     const options: Options = {
       ...request.options,
-      ...(!this.resumeToken && this.input.nativeSessionId ? { sessionId: this.input.nativeSessionId } : {}),
+      ...(!this.resumeToken && nativeSessionId ? { sessionId: nativeSessionId } : {}),
       ...(traceEnv
         ? {
             env: {
@@ -435,7 +467,31 @@ class ClaudeCodeRuntimeConnection implements AgentRuntimeConnection {
 
     this.adapter?.beginTurn()
 
-    const sdkMessage = await toSdkUserMessage(input.message, this.resumeToken, input.systemReminder, {
+    let effectiveMessage = input.message
+    if (this.pendingHistoryPreamble && !this.conversationHistorySeeded) {
+      this.conversationHistorySeeded = true
+      const preamble = this.pendingHistoryPreamble
+      const originalParts = input.message.data?.parts ?? []
+      const textPartIndex = originalParts.findIndex((p) => p.type === 'text')
+      let newParts: typeof originalParts
+      if (textPartIndex >= 0) {
+        const originalText = (originalParts[textPartIndex] as { text: string }).text
+        newParts = originalParts.map((p, idx) =>
+          idx === textPartIndex ? { ...p, text: `${preamble}\n\n${originalText}` } : p
+        )
+      } else {
+        newParts = [{ type: 'text', text: preamble } as never, ...originalParts]
+      }
+      effectiveMessage = {
+        ...input.message,
+        data: {
+          ...input.message.data,
+          parts: newParts
+        }
+      }
+    }
+
+    const sdkMessage = await toSdkUserMessage(effectiveMessage, this.resumeToken, input.systemReminder, {
       supportsAttachmentReads: this.assistantFileToolsEnabled,
       supportsImages: resolveModelImageSupport(this.input.modelId)
     })

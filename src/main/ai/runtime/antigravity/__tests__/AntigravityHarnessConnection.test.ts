@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { McpServer } from '@modelcontextprotocol/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type * as AgentSessionWorkspaceModule from '@main/ai/runtime/agentSessionWorkspace'
+
 const mocks = vi.hoisted(() => ({
   getSessionById: vi.fn(),
   getAgent: vi.fn(),
@@ -85,7 +87,7 @@ vi.mock('@main/ai/agents/agentDataDirectory', () => ({
 }))
 
 vi.mock('@main/ai/runtime/agentSessionWorkspace', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@main/ai/runtime/agentSessionWorkspace')>()),
+  ...(await importOriginal<typeof AgentSessionWorkspaceModule>()),
   prepareAgentSessionWorkspaceDirectory: mocks.prepareWorkspace
 }))
 
@@ -126,18 +128,19 @@ vi.mock('@main/ai/runtime/localAgent/launch', () => ({
   resolveLocalAgentLaunch: mocks.resolveLocalAgentLaunch
 }))
 
-import { toolApprovalRegistry } from '@main/ai/toolApproval/ToolApprovalRegistry'
 import { ClaudeCodeRuntimeDriver } from '@main/ai/runtime/claudeCode/ClaudeCodeRuntimeDriver'
 import type { AgentRuntimeEvent, AgentRuntimeUserInput } from '@main/ai/runtime/types'
+import { toolApprovalRegistry } from '@main/ai/toolApproval/ToolApprovalRegistry'
 
-import {
-  ANTIGRAVITY_RESUME_TOKEN_PREFIX,
-  connectAntigravityAgentSession
-} from '../AntigravityHarnessConnection'
+import { ANTIGRAVITY_RESUME_TOKEN_PREFIX, connectAntigravityAgentSession } from '../AntigravityHarnessConnection'
 
 const fixturePath = fileURLToPath(new URL('./fixtures/mockAgyAcp.mjs', import.meta.url))
 
-function makeUserInput(id: string, text: string, extraParts: Array<Record<string, unknown>> = []): AgentRuntimeUserInput {
+function makeUserInput(
+  id: string,
+  text: string,
+  extraParts: Array<Record<string, unknown>> = []
+): AgentRuntimeUserInput {
   return {
     message: {
       id,

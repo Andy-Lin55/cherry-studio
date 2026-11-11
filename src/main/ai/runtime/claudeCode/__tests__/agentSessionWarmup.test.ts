@@ -212,6 +212,25 @@ describe('buildClaudeCodeQueryRequestForAgentSession resume-token precedence', (
     expect(mocks.getLastRuntimeResumeToken).toHaveBeenCalledWith('session-1')
   })
 
+  it('ignores foreign Antigravity resume tokens and leaves resume undefined', async () => {
+    mocks.getLastRuntimeResumeToken.mockReturnValue('agy-acp:63f130fc-b468-4a1d-b3ed-6cdba10cb2db')
+
+    const request = await buildClaudeCodeQueryRequestForAgentSession('session-1')
+
+    expect(request?.options.resume).toBeUndefined()
+  })
+
+  it('ignores explicit foreign Antigravity resume tokens', async () => {
+    mocks.getLastRuntimeResumeToken.mockReturnValue('persisted-token')
+
+    const request = await buildClaudeCodeQueryRequestForAgentSession(
+      'session-1',
+      'agy-acp:63f130fc-b468-4a1d-b3ed-6cdba10cb2db'
+    )
+
+    expect(request?.options.resume).toBeUndefined()
+  })
+
   it('passes the per-turn knowledge selection into settings and the warm signature', async () => {
     const request = await buildClaudeCodeQueryRequestForAgentSession(
       'session-1',

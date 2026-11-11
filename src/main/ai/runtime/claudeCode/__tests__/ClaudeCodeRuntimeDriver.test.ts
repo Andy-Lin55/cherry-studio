@@ -165,6 +165,7 @@ const mocks = vi.hoisted(() => ({
   collectFileAttachments: vi.fn(),
   prepareChatMessages: vi.fn(),
   materializeNativeFilePart: vi.fn(),
+  readAgentSessionPath: vi.fn(),
   processManagerSpawn: vi.fn(),
   registerMcpSessionCatalogSync: vi.fn(),
   adapterInstances: [] as any[]
@@ -210,6 +211,10 @@ vi.mock('@main/ai/messages/fileProcessor', () => ({
 
 vi.mock('@main/utils/file', () => ({
   probeReadable: mocks.probeReadable
+}))
+
+vi.mock('@data/services/agentSessionMessageTree', () => ({
+  readAgentSessionPath: mocks.readAgentSessionPath
 }))
 
 vi.mock('../settingsBuilder', async (importActual) => ({
@@ -497,6 +502,7 @@ describe('ClaudeCodeRuntimeDriver', () => {
         return { prepareTrace: mocks.prepareTrace, refreshTraceContext: mocks.refreshTraceContext }
       if (name === 'FileManager') return { getPhysicalPath: mocks.getPhysicalPath }
       if (name === 'ClaudeCodeProcessManager') return { spawn: mocks.processManagerSpawn }
+      if (name === 'DbService') return { getDb: () => ({}) }
       // teardownSession reaches the session-state service through the settingsBuilder facade.
       if (name === 'ClaudeCodeSessionStateService') return { disposeToolPolicySnapshot: vi.fn() }
       throw new Error(`Unexpected application.get(${name})`)
@@ -506,6 +512,7 @@ describe('ClaudeCodeRuntimeDriver', () => {
     mocks.probeReadable.mockResolvedValue('readable')
     mocks.prepareTrace.mockResolvedValue(undefined)
     mocks.collectFileAttachments.mockReturnValue([])
+    mocks.readAgentSessionPath.mockReturnValue([])
     mocks.prepareChatMessages.mockImplementation(async (messages) => messages)
     mocks.materializeNativeFilePart.mockResolvedValue(null)
     mocks.buildRequest.mockResolvedValue({
@@ -713,6 +720,51 @@ describe('ClaudeCodeRuntimeDriver', () => {
       },
       done: false
     })
+    void connection.close()
+  })
+
+  it('sanitizes Antigravity resume token, starts fresh session and injects conversation history', async () => {
+    const queryQueue = createAsyncQueue<any>()
+    const query = { ...queryQueue.iterable, interrupt: vi.fn(), close: vi.fn() }
+    mocks.createClaudeQuery.mockReturnValue(query)
+
+    mocks.readAgentSessionPath.mockReturnValue([
+      { role: 'user', data: { parts: [{ type: 'text', text: 'Hello from user' }] } },
+      { role: 'assistant', data: { parts: [{ type: 'text', text: 'Hello from Antigravity' }] } }
+    ])
+
+    const connection = await new ClaudeCodeRuntimeDriver().connect({
+      sessionId: 'session-1',
+      agentId: 'agent-1',
+      modelId: 'claude-code::sonnet',
+      resumeToken: 'agy-acp:63f130fc-b468-4a1d-b3ed-6cdba10cb2db',
+      nativeSessionId: 'agy-acp:63f130fc-b468-4a1d-b3ed-6cdba10cb2db'
+    })
+
+    // Foreign agy-acp token must NOT be passed to buildRequest as resume
+    expect(mocks.buildRequest).toHaveBeenCalledWith(
+      'session-1',
+      undefined,
+      'claude-code::sonnet',
+      'default',
+      false,
+      undefined
+    )
+
+    const sdkInput = mocks.createClaudeQuery.mock.calls[0][0].prompt
+    const nextInput = sdkInput[Symbol.asyncIterator]().next()
+
+    const currentMsg = userMessage()
+    await connection.send({ message: currentMsg })
+
+    const result = await nextInput
+    expect(result.value?.session_id).toBe('')
+    expect(result.value?.message?.content).toContain('<conversation_history>')
+    expect(result.value?.message?.content).toContain('The conversation so far before switching to this model:')
+    expect(result.value?.message?.content).toContain('User: Hello from user')
+    expect(result.value?.message?.content).toContain('Assistant: Hello from Antigravity')
+    expect(result.value?.message?.content).toContain('hello')
+
     void connection.close()
   })
 

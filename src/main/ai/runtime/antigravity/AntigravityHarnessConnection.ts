@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 
 import { application } from '@application'
 import { agentService } from '@data/services/AgentService'
-import { agentSessionService } from '@data/services/AgentSessionService'
 import { readAgentSessionPath } from '@data/services/agentSessionMessageTree'
+import { agentSessionService } from '@data/services/AgentSessionService'
 import { loggerService } from '@logger'
 import { ensureAgentDataDirectory } from '@main/ai/agents/agentDataDirectory'
 import { resolveAutomationAccess, resolveMountedMcpServers } from '@main/ai/agents/builtin/builtinAgentCapabilities'
@@ -12,8 +12,8 @@ import { buildAgentRuntimePrompt } from '@main/ai/runtime/agentPrompt'
 import { prepareAgentSessionWorkspaceDirectory } from '@main/ai/runtime/agentSessionWorkspace'
 import { buildAgentUserContent } from '@main/ai/runtime/agentUserContent'
 import { buildCitationsGuidance } from '@main/ai/runtime/citationsGuidance'
-import { resolveLocalAgentLaunch } from '@main/ai/runtime/localAgent/launch'
 import { AcpConnection } from '@main/ai/runtime/localAgent/AcpConnection'
+import { resolveLocalAgentLaunch } from '@main/ai/runtime/localAgent/launch'
 import type {
   AgentRuntimeConnectInput,
   AgentRuntimeConnection,
@@ -26,15 +26,17 @@ import { skillService } from '@main/ai/skills/SkillService'
 import type { DispatchDecision } from '@main/ai/toolApproval/ToolApprovalRegistry'
 import { getEffectiveAgentLanguage } from '@main/ai/utils/agentLanguage'
 import { resolveKnowledgeBaseScope } from '@main/ai/utils/knowledgeScope'
+import type { LocalAgentConfiguration } from '@shared/ai/localAgent'
 import type { AgentPermissionMode } from '@shared/data/api/schemas/agents'
 import type { AgentSessionEntity } from '@shared/data/api/schemas/agentSessions'
 import {
   ANTIGRAVITY_PROVIDER_ID,
+  ANTIGRAVITY_RESUME_TOKEN_PREFIX,
   isAntigravityModelId,
+  isAntigravityResumeToken,
   mapReasoningEffortToAntigravityThoughtLevel,
   resolveAntigravityAcpModel
 } from '@shared/data/presets/antigravity'
-import type { LocalAgentConfiguration } from '@shared/ai/localAgent'
 import type { ReasoningEffortOption } from '@shared/types/aiSdk'
 
 import { startMcpStdioBridgeHost, type McpStdioBridgeHandle } from './mcpStdioBridgeHost'
@@ -42,7 +44,7 @@ import { stageAntigravitySkills, type StagedAntigravitySkills } from './stageAnt
 
 const logger = loggerService.withContext('AntigravityHarnessConnection')
 
-export const ANTIGRAVITY_RESUME_TOKEN_PREFIX = 'agy-acp:'
+export { ANTIGRAVITY_RESUME_TOKEN_PREFIX } from '@shared/data/presets/antigravity'
 
 function mapPermissionModeToAgyMode(mode: AgentPermissionMode): string {
   switch (mode) {
@@ -339,7 +341,7 @@ export class AntigravityHarnessConnection extends AcpConnection implements Agent
 
     let patched = false
     const targetReasoning = input?.reasoningEffort ?? agent.configuration?.reasoning_effort ?? 'default'
-    const targetPermissionMode = (agent.configuration?.permission_mode ?? 'default') as AgentPermissionMode
+    const targetPermissionMode = agent.configuration?.permission_mode ?? 'default'
 
     if (this.permissionMode !== targetPermissionMode) {
       this.permissionMode = targetPermissionMode
@@ -473,7 +475,7 @@ export async function connectAntigravityAgentSession(
   }
 
   // Cross-provider resume check & conversation history seeding
-  const isAgyResumeToken = input.resumeToken?.startsWith(ANTIGRAVITY_RESUME_TOKEN_PREFIX)
+  const isAgyResumeToken = isAntigravityResumeToken(input.resumeToken)
   const nativeResumeId = isAgyResumeToken ? input.resumeToken!.slice(ANTIGRAVITY_RESUME_TOKEN_PREFIX.length) : undefined
 
   let pendingHistoryPreamble: string | undefined
@@ -502,7 +504,7 @@ export async function connectAntigravityAgentSession(
 
   const rawModelId = input.modelId
   const reasoningEffort = input.reasoningEffort ?? agent.configuration?.reasoning_effort ?? 'default'
-  const permissionMode = (agent.configuration?.permission_mode ?? 'default') as AgentPermissionMode
+  const permissionMode = agent.configuration?.permission_mode ?? 'default'
 
   const config: LocalAgentConfiguration = {
     protocol: 'acp',
