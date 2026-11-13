@@ -3146,15 +3146,20 @@ future-model-ultra-high\tFuture Model Ultra (High)`
 
     const parsed = parseAntigravityModelsStdout(stdout, provider, registryModels)
 
+    const getEffortValues = (model?: { reasoning?: { controls?: Array<{ kind: string; values?: unknown }> } }) => {
+      const firstControl = model?.reasoning?.controls?.[0]
+      return firstControl && firstControl.kind === 'effort' ? firstControl.values : undefined
+    }
+
     const argon = parsed.find((m) => m.apiModelId === 'gemini-4-argon')
     expect(argon).toBeDefined()
     expect(argon?.name).toBe('Gemini 4 Argon')
-    expect(argon?.reasoning?.controls[0].values).toEqual(['low', 'medium', 'high'])
+    expect(getEffortValues(argon)).toEqual(['low', 'medium', 'high'])
 
     const hydrogen = parsed.find((m) => m.apiModelId === 'gemini-4-hydrogen')
     expect(hydrogen).toBeDefined()
     expect(hydrogen?.name).toBe('Gemini 4 Hydrogen')
-    expect(hydrogen?.reasoning?.controls[0].values).toEqual(['low', 'medium', 'high', 'xhigh'])
+    expect(getEffortValues(hydrogen)).toEqual(['low', 'medium', 'high', 'xhigh'])
 
     const orchestrator = parsed.find((m) => m.apiModelId === 'gemini-pro-orchestrator-g1-pro')
     expect(orchestrator).toBeDefined()
@@ -3165,7 +3170,7 @@ future-model-ultra-high\tFuture Model Ultra (High)`
     expect(future).toBeDefined()
     expect(future?.name).toBe('Future Model Ultra')
     expect(future?.capabilities).toContain('reasoning')
-    expect(future?.reasoning?.controls[0].values).toEqual(['high'])
+    expect(getEffortValues(future)).toEqual(['high'])
   })
 
   it('falls back to registry models for google-antigravity when dynamic fetch fails', async () => {

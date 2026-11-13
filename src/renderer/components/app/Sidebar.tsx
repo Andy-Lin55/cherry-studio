@@ -31,7 +31,6 @@ import { isMac } from '@renderer/utils/platform'
 import type { CommandId } from '@shared/utils/command'
 
 import { HelpMenu } from '../layout/HelpMenu'
-import { AppUpdateButton } from '../layout/ShellTabBarActions'
 import { useNotificationCenter } from '../NotificationCenter'
 import {
   getSidebarDisplayWidth,
@@ -317,7 +316,6 @@ export default function Sidebar({
     entries,
     emptyHint: t('sidebar.empty_hint', { launchpad: t('title.launchpad') }),
     user: sidebarUser,
-    userAction: layout === 'full' ? <AppUpdateButton placement="top" /> : undefined,
     renderUserTrigger: renderSidebarUserTrigger,
     onEntriesReorder: handleReorder
   }

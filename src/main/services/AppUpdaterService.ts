@@ -23,6 +23,7 @@ import { IpcError, IpcErrorCode } from '@shared/ipc/errors/IpcError'
 import type { AppUpdaterNotAvailablePayload } from '@shared/ipc/schemas/app'
 import type { OutputFor } from '@shared/ipc/types'
 import type { AppEdition } from '@shared/types/appEdition'
+import { formatUpdateVersionDisplay } from '@shared/utils/buildInfo'
 import { APP_NAME } from '@shared/utils/constants'
 import {
   hasMultiLanguageReleaseNotes,
@@ -32,6 +33,8 @@ import {
   parseReleaseHistory,
   type ReleaseNotesEntry
 } from '@shared/utils/releaseNotes'
+
+import { MacRollingUpdater } from './updater/macRollingUpdater'
 
 const logger = loggerService.withContext('AppUpdaterService')
 
@@ -142,6 +145,7 @@ export class AppUpdaterService extends BaseService {
   protected async onAllReady(): Promise<void> {
     application.get('PowerService').registerShutdownHandler(() => {
       autoUpdater.autoDownload = false
+      this.macRollingUpdater?.abortActiveDownload()
     })
 
     // Development builds skip automatic checks but still support manual checks.
@@ -151,12 +155,28 @@ export class AppUpdaterService extends BaseService {
     this.scheduleNextUpdateCheck(INITIAL_CHECK_DELAY_MS)
   }
 
+  private macRollingUpdater: MacRollingUpdater | null = null
+
+  private getMacRollingUpdater(): MacRollingUpdater {
+    if (!this.macRollingUpdater) {
+      this.macRollingUpdater = new MacRollingUpdater(logger, {
+        onAvailable: (info) => this.handleUpdateAvailable(info),
+        onNotAvailable: (payload) => this.broadcastUpdateNotAvailable(payload),
+        onDownloadProgress: (progress) => this.handleDownloadProgress(progress),
+        onDownloaded: (info) => this.handleUpdateDownloaded(info),
+        onError: (error) => this.handleUpdateError(error)
+      })
+    }
+    return this.macRollingUpdater
+  }
+
   private async publishReleaseNotification(releaseInfo: UpdateInfo): Promise<void> {
-    if (this.pendingReleaseNotifications.has(releaseInfo.version)) return
-    this.pendingReleaseNotifications.add(releaseInfo.version)
+    const releaseIdentifier = formatUpdateVersionDisplay(releaseInfo)
+    if (this.pendingReleaseNotifications.has(releaseIdentifier)) return
+    this.pendingReleaseNotifications.add(releaseIdentifier)
     try {
       const db = application.get('DbService').getDb()
-      const key = `appUpdater:notification:${releaseInfo.version}`
+      const key = `appUpdater:notification:${releaseIdentifier}`
       if (db.select().from(appStateTable).where(eq(appStateTable.key, key)).get()) return
 
       const releaseNotes =
@@ -166,7 +186,7 @@ export class AppUpdaterService extends BaseService {
               ?.map(({ note }) => note)
               .filter(Boolean)
               .join('\n\n') ?? '')
-      const title = t('notification.center.version_available', { version: releaseInfo.version })
+      const title = t('notification.center.version_available', { version: releaseIdentifier })
       const summary = releaseNotes
         .split('\n')
         .find((line) => line.trim() && !/^\s*#/.test(line))
@@ -175,7 +195,7 @@ export class AppUpdaterService extends BaseService {
         .slice(0, 240)
       const recorded = await application.get('NotificationService').publish(
         {
-          eventKey: `release:${releaseInfo.version}`,
+          eventKey: `release:${releaseIdentifier}`,
           category: 'official',
           kind: 'release',
           title,
@@ -189,24 +209,42 @@ export class AppUpdaterService extends BaseService {
     } catch (error) {
       logger.warn('Failed to publish release notification', error as Error)
     } finally {
-      this.pendingReleaseNotifications.delete(releaseInfo.version)
+      this.pendingReleaseNotifications.delete(releaseIdentifier)
     }
   }
 
+  private handleUpdateError(error: Error): void {
+    logger.error('update error', error)
+    application.get('IpcApiService').broadcastToType(WindowType.Main, 'app.updater.error', error)
+  }
+
+  private handleUpdateAvailable(releaseInfo: UpdateInfo): void {
+    logger.info('update available', releaseInfo)
+    const processedReleaseInfo = this.processReleaseInfo(releaseInfo)
+    void this.publishReleaseNotification(processedReleaseInfo)
+    application.get('IpcApiService').broadcastToType(WindowType.Main, 'app.updater.available', processedReleaseInfo)
+  }
+
+  private broadcastUpdateNotAvailable(payload: AppUpdaterNotAvailablePayload): void {
+    application.get('IpcApiService').broadcastToType(WindowType.Main, 'app.updater.not_available', payload)
+  }
+
+  private handleDownloadProgress(progress: ProgressInfo): void {
+    application.get('IpcApiService').broadcastToType(WindowType.Main, 'app.updater.download_progress', progress)
+  }
+
+  private handleUpdateDownloaded(releaseInfo: UpdateInfo): void {
+    const processedReleaseInfo = this.processReleaseInfo(releaseInfo)
+    application.get('IpcApiService').broadcastToType(WindowType.Main, 'app.updater.downloaded', processedReleaseInfo)
+    logger.info('update downloaded', processedReleaseInfo)
+  }
+
   private registerAutoUpdaterListeners(): void {
-    const onError = (error: Error) => {
-      logger.error('update error', error)
-      application.get('IpcApiService').broadcastToType(WindowType.Main, 'app.updater.error', error)
-    }
+    const onError = (error: Error) => this.handleUpdateError(error)
     autoUpdater.on('error', onError)
     this.registerDisposable(() => autoUpdater.removeListener('error', onError))
 
-    const onUpdateAvailable = (releaseInfo: UpdateInfo) => {
-      logger.info('update available', releaseInfo)
-      const processedReleaseInfo = this.processReleaseInfo(releaseInfo)
-      void this.publishReleaseNotification(processedReleaseInfo)
-      application.get('IpcApiService').broadcastToType(WindowType.Main, 'app.updater.available', processedReleaseInfo)
-    }
+    const onUpdateAvailable = (releaseInfo: UpdateInfo) => this.handleUpdateAvailable(releaseInfo)
     autoUpdater.on('update-available', onUpdateAvailable)
     this.registerDisposable(() => autoUpdater.removeListener('update-available', onUpdateAvailable))
 
@@ -217,23 +255,16 @@ export class AppUpdaterService extends BaseService {
           `managed feed target ${result.feedVersion} differs from installed ${result.currentVersion} (channel: ${autoUpdater.channel}) — treating as withheld, not current`
         )
       }
-      const payload: AppUpdaterNotAvailablePayload = { isCurrent: result.isCurrent }
-      application.get('IpcApiService').broadcastToType(WindowType.Main, 'app.updater.not_available', payload)
+      this.broadcastUpdateNotAvailable({ isCurrent: result.isCurrent })
     }
     autoUpdater.on('update-not-available', onUpdateNotAvailable)
     this.registerDisposable(() => autoUpdater.removeListener('update-not-available', onUpdateNotAvailable))
 
-    const onDownloadProgress = (progress: ProgressInfo) => {
-      application.get('IpcApiService').broadcastToType(WindowType.Main, 'app.updater.download_progress', progress)
-    }
+    const onDownloadProgress = (progress: ProgressInfo) => this.handleDownloadProgress(progress)
     autoUpdater.on('download-progress', onDownloadProgress)
     this.registerDisposable(() => autoUpdater.removeListener('download-progress', onDownloadProgress))
 
-    const onUpdateDownloaded = (releaseInfo: UpdateInfo) => {
-      const processedReleaseInfo = this.processReleaseInfo(releaseInfo)
-      application.get('IpcApiService').broadcastToType(WindowType.Main, 'app.updater.downloaded', processedReleaseInfo)
-      logger.info('update downloaded', processedReleaseInfo)
-    }
+    const onUpdateDownloaded = (releaseInfo: UpdateInfo) => this.handleUpdateDownloaded(releaseInfo)
     autoUpdater.on('update-downloaded', onUpdateDownloaded)
     this.registerDisposable(() => autoUpdater.removeListener('update-downloaded', onUpdateDownloaded))
   }
@@ -311,6 +342,13 @@ export class AppUpdaterService extends BaseService {
     | { status: 'available'; currentVersion: string; version: string }
   > {
     const { currentVersion, updateChannel, updateHeaders } = await this.getUpdateRequest()
+    const rollingConfig = this.getMacRollingUpdater().getConfig()
+    if (rollingConfig) {
+      const resolved = await this.getMacRollingUpdater().fetchLatestRelease(rollingConfig, updateHeaders)
+      return resolved.comparison.isUpdateAvailable
+        ? { status: 'available', currentVersion, version: resolved.updateInfo.version }
+        : { status: 'current', currentVersion }
+    }
     const updater = new ReleaseNotesUpdater()
     updater.logger = logger as Logger
     updater.forceDevUpdateConfig = !app.isPackaged
@@ -330,6 +368,18 @@ export class AppUpdaterService extends BaseService {
   public async getLatestReleaseNotes(): Promise<ReleaseNotesEntry | null> {
     try {
       const { updateChannel, updateHeaders } = await this.getUpdateRequest()
+      const rollingConfig = this.getMacRollingUpdater().getConfig()
+      if (rollingConfig) {
+        const resolved = await this.getMacRollingUpdater().fetchLatestRelease(rollingConfig, updateHeaders)
+        if (!resolved.comparison.isUpdateAvailable) {
+          return null
+        }
+        const releaseNotes = resolved.updateInfo.releaseNotes
+        if (typeof releaseNotes !== 'string' || !releaseNotes.trim()) {
+          return null
+        }
+        return { releaseNotes, version: resolved.updateInfo.version }
+      }
       const updater = new ReleaseNotesUpdater()
       updater.logger = logger as Logger
       updater.forceDevUpdateConfig = !app.isPackaged
@@ -406,6 +456,19 @@ export class AppUpdaterService extends BaseService {
   private async performUpdateCheck() {
     void application.get('AnalyticsService').trackAppUpdate()
 
+    const rollingUpdater = this.getMacRollingUpdater()
+    if (rollingUpdater.isEnabled()) {
+      const { updateHeaders } = await this.getUpdateRequest()
+      try {
+        this.updateCheckResult = (await rollingUpdater.checkAndDownload(updateHeaders)) as unknown as UpdateCheckResult
+        return this.updateCheckResult
+      } catch (error) {
+        const normalizedError = error instanceof Error ? error : new Error(String(error))
+        this.handleUpdateError(normalizedError)
+        throw normalizedError
+      }
+    }
+
     await this.configureUpdaterForCheck()
 
     this.updateCheckResult = await autoUpdater.checkForUpdates()
@@ -477,7 +540,15 @@ export class AppUpdaterService extends BaseService {
     return Math.round(CHECK_INTERVAL_MS * (1 + (Math.random() * 2 - 1) * CHECK_JITTER_RATIO))
   }
 
-  public quitAndInstall() {
+  public async quitAndInstall() {
+    const rollingUpdater = this.getMacRollingUpdater()
+    if (rollingUpdater.isEnabled() && rollingUpdater.hasDownloadedUpdate()) {
+      await rollingUpdater.prepareAndSpawnInstaller(() => {
+        application.markQuitting()
+        setImmediate(() => app.quit())
+      })
+      return
+    }
     application.markQuitting()
     setImmediate(() => autoUpdater.quitAndInstall(true, true))
   }

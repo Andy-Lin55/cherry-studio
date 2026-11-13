@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from 'fs'
+import { execSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { join, resolve } from 'path'
 
@@ -79,6 +80,27 @@ export function resolveRendererEdition(value: string | undefined): AppEdition {
 const rendererEdition = resolveRendererEdition(process.env.CHERRY_EDITION)
 const sentryBuildContext = getSentryBuildContext(pkg.name, pkg.version, rendererEdition)
 const { sourceMapUploadEnabled } = resolveSentryBuildSettings(process.env)
+
+function resolveAppBuildInfo() {
+  let commitSha = process.env.GITHUB_SHA?.trim() || ''
+  if (!commitSha) {
+    try {
+      commitSha = execSync('git rev-parse HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] })
+        .toString('utf8')
+        .trim()
+    } catch {
+      commitSha = ''
+    }
+  }
+  return {
+    version: pkg.version,
+    commitSha: commitSha || null,
+    shortSha: commitSha ? commitSha.slice(0, 7) : null,
+    builtAt: process.env.APP_BUILD_TIME?.trim() || new Date().toISOString()
+  }
+}
+
+const appBuildInfo = resolveAppBuildInfo()
 const sentrySourceMap = sourceMapUploadEnabled ? ('hidden' as const) : isDev
 const sentrySourceMapPlugins = (outputDirectory: 'main' | 'preload' | 'renderer') =>
   sourceMapUploadEnabled
@@ -179,6 +201,7 @@ export default defineConfig({
   main: {
     define: {
       __APP_EDITION__: JSON.stringify(rendererEdition),
+      __APP_BUILD_INFO__: JSON.stringify(appBuildInfo),
       __CLAUDE_CODE_BINARY_MANIFEST__: JSON.stringify(claudeCodeBinaryManifest(__dirname))
     },
     plugins: [
@@ -268,6 +291,7 @@ export default defineConfig({
   renderer: {
     define: {
       __APP_EDITION__: JSON.stringify(rendererEdition),
+      __APP_BUILD_INFO__: JSON.stringify(appBuildInfo),
       __APP_RELEASE_HISTORY__: JSON.stringify(bundledReleaseHistory),
       __APP_RELEASE_NOTES__: JSON.stringify(bundledReleaseNotes),
       __APP_RELEASE_VERSION__: JSON.stringify(pkg.version)

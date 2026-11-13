@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AppEventSchemas } from '@shared/ipc/schemas/app'
 
-const GITHUB_RELEASES_URL = 'https://github.com/CherryHQ/cherry-studio/releases'
+const GITHUB_RELEASES_URL = 'https://github.com/Andy-Lin55/cherry-studio/releases'
 
 const currentPayload: AppEventSchemas['app.updater.not_available'] = { isCurrent: true }
 

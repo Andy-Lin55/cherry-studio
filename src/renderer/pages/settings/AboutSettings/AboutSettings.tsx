@@ -276,7 +276,9 @@ const AboutSettings: FC = () => {
         <SettingGroup theme={theme}>
           <SettingRow className="gap-3">
             <SettingRowTitle className="gap-2.5">
-              {t('settings.about.updateAvailable', { version: appUpdateState.info.version })}
+              {t('settings.about.updateAvailable', {
+                version: appUpdateState.info.releaseName || appUpdateState.info.version
+              })}
               <IndicatorLight color="var(--success)" />
             </SettingRowTitle>
           </SettingRow>

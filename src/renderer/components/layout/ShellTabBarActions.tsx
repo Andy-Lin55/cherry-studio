@@ -9,15 +9,22 @@ import GlobalSearchPopup from '@renderer/components/GlobalSearch/GlobalSearchPop
 import { getSidebarLayout } from '@renderer/components/Sidebar'
 import { useAppUpdateState } from '@renderer/hooks/useAppUpdateState'
 import { openSettingsTab } from '@renderer/services/mainWindowNavigation'
+import { formatUpdateVersionDisplay } from '@shared/utils/buildInfo'
 
 import { WindowControls } from '../WindowControls'
 
 const logger = loggerService.withContext('ShellTabBarActions')
 
-export function AppUpdateButton({ placement = 'bottom' }: { placement?: 'top' | 'right' | 'bottom' | 'left' }) {
+export function AppUpdateButton({
+  placement = 'bottom',
+  showLabel = false
+}: {
+  placement?: 'top' | 'right' | 'bottom' | 'left'
+  showLabel?: boolean
+}) {
   const { t } = useTranslation()
-  const { appUpdateState } = useAppUpdateState()
-  const hasUpdateAction = Boolean(appUpdateState.available && appUpdateState.downloaded && appUpdateState.info)
+  const { appUpdateState, checkForUpdate } = useAppUpdateState()
+  const hasUpdateAction = Boolean(appUpdateState.available && appUpdateState.info)
 
   if (!hasUpdateAction) return null
 
@@ -25,25 +32,46 @@ export function AppUpdateButton({ placement = 'bottom' }: { placement?: 'top' | 
     const releaseInfo = appUpdateState.info
     if (!releaseInfo) return
 
+    if (!appUpdateState.downloaded && !appUpdateState.downloading) {
+      void checkForUpdate()
+    }
+
     void import('@renderer/components/UpdateDialogPopup')
       .then(({ default: UpdateDialogPopup }) => UpdateDialogPopup.show({ releaseInfo }))
       .catch((error) => logger.error('Failed to open update dialog', error as Error))
   }
 
-  const updateLabel = appUpdateState.info
-    ? t('settings.about.updateAvailable', { version: appUpdateState.info.version })
-    : t('button.update_available')
+  const displayVersion = appUpdateState.info ? formatUpdateVersionDisplay(appUpdateState.info) : ''
+  const progressPercent = Math.round(appUpdateState.downloadProgress ?? 0)
+  const updateLabel = appUpdateState.downloading
+    ? `${t('settings.about.downloading')} ${progressPercent}%`
+    : appUpdateState.info
+      ? t('settings.about.updateAvailable', { version: displayVersion })
+      : t('button.update_available')
+  const shortText = appUpdateState.downloading ? `${progressPercent}%` : t('settings.about.checkUpdate.available')
 
   return (
     <Tooltip content={updateLabel} placement={placement} delay={800}>
       <Button
         type="button"
         variant="ghost"
-        size="icon"
+        size={showLabel ? 'sm' : 'icon'}
         aria-label={updateLabel}
         onClick={handleUpdateClick}
-        className="flex size-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-accent">
-        <CircleArrowUp className="lucide-custom size-[18px] text-success" strokeWidth={1.8} />
+        className={
+          showLabel
+            ? 'flex h-7 shrink-0 items-center gap-1 rounded-full bg-success/12 px-2.5 text-xs font-medium text-success transition-colors hover:bg-success/20'
+            : 'flex size-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-accent'
+        }>
+        <CircleArrowUp
+          className={
+            showLabel
+              ? `lucide-custom size-3.5 shrink-0 text-success${appUpdateState.downloading ? ' animate-pulse' : ''}`
+              : `lucide-custom size-[18px] text-success${appUpdateState.downloading ? ' animate-pulse' : ''}`
+          }
+          strokeWidth={showLabel ? 2 : 1.8}
+        />
+        {showLabel ? <span aria-hidden="true">{shortText}</span> : null}
       </Button>
     </Tooltip>
   )
@@ -61,7 +89,7 @@ export function ShellTabBarActions() {
   return (
     <div className="flex h-full shrink-0 items-stretch">
       <div className="flex items-center gap-1 pr-2 [-webkit-app-region:no-drag]">
-        {sidebarLayout !== 'full' ? <AppUpdateButton /> : null}
+        <AppUpdateButton showLabel />
         <CommandTooltip command="app.search" label={t('globalSearch.open')} placement="bottom" delay={800}>
           <Button
             type="button"

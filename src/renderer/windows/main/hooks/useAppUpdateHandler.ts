@@ -12,7 +12,7 @@ const logger = loggerService.withContext('useAppUpdateHandler')
 
 // Canonical manual download offered when the managed feed withholds the
 // install's version. Mirrors the Releases link on the About settings page.
-const GITHUB_RELEASES_URL = 'https://github.com/CherryHQ/cherry-studio/releases'
+const GITHUB_RELEASES_URL = 'https://github.com/Andy-Lin55/cherry-studio/releases'
 
 /** Map updater failures to i18n keys. Never surface the raw HTTP body. */
 export function getManualUpdateErrorMessageKey(

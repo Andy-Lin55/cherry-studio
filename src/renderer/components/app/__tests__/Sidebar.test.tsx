@@ -282,14 +282,10 @@ describe('app Sidebar', () => {
     expect(screen.getByTestId('floating-sidebar')).toBeVisible()
   })
 
-  it('keeps the update action independent from the account menu', async () => {
-    const user = userEvent.setup()
+  it('does not duplicate the top-right update button inside the sidebar footer', () => {
     render(<Sidebar />)
 
-    await user.click(screen.getByRole('button', { name: 'Install update' }))
-
-    expect(mocks.showUpdatePopup).toHaveBeenCalledOnce()
-    expect(screen.queryByTestId('account-menu')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Install update' })).not.toBeInTheDocument()
   })
 
   it.each([170, 50, 0])('moves help into the account menu at sidebar width %s', async (width) => {

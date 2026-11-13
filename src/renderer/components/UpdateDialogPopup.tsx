@@ -17,6 +17,7 @@ import { useAppUpdateState } from '@renderer/hooks/useAppUpdateState'
 import { ipcApi } from '@renderer/ipc'
 import { createPopup, type PopupInjectedProps } from '@renderer/services/popup'
 import { toast } from '@renderer/services/toast'
+import { formatUpdateVersionDisplay } from '@shared/utils/buildInfo'
 
 import { UpgradeReleaseNotes } from './UpgradeReleaseNotes'
 
@@ -31,7 +32,11 @@ type Props = ShowParams & PopupInjectedProps<Record<string, never>>
 const PopupContainer: React.FC<Props> = ({ releaseInfo, open, resolve }) => {
   const { t } = useTranslation()
   const [isInstalling, setIsInstalling] = useState(false)
-  const { updateAppUpdateState } = useAppUpdateState()
+  const { appUpdateState, updateAppUpdateState, checkForUpdate } = useAppUpdateState()
+  const activeReleaseInfo = appUpdateState.info ?? releaseInfo
+  const isDownloading = Boolean(appUpdateState.downloading)
+  const isReadyToInstall = Boolean(appUpdateState.downloaded || (!appUpdateState.available && !isDownloading))
+  const displayVersion = activeReleaseInfo ? formatUpdateVersionDisplay(activeReleaseInfo) : ''
   useEffect(() => {
     if (releaseInfo) {
       logger.info('Update dialog opened', { version: releaseInfo.version })
@@ -39,6 +44,11 @@ const PopupContainer: React.FC<Props> = ({ releaseInfo, open, resolve }) => {
   }, [releaseInfo])
 
   const handleInstall = async () => {
+    if (isDownloading) return
+    if (!isReadyToInstall) {
+      await checkForUpdate()
+      return
+    }
     setIsInstalling(true)
     try {
       // [v2] Removed: Redux persistor flush is no longer needed after v2 data refactoring
@@ -73,21 +83,23 @@ const PopupContainer: React.FC<Props> = ({ releaseInfo, open, resolve }) => {
       <DialogContent className="max-h-[calc(100dvh-2rem)] grid-rows-[auto_auto_minmax(0,1fr)_auto_auto] sm:max-w-[720px]">
         <DialogHeader className="pr-8">
           <DialogTitle>{t('update.title')}</DialogTitle>
-          <p className="text-sm text-muted-foreground">
-            {t('update.message').replace('{{version}}', releaseInfo?.version || '')}
-          </p>
+          <p className="text-sm text-muted-foreground">{t('update.message').replace('{{version}}', displayVersion)}</p>
         </DialogHeader>
         <Divider className="my-0" />
         <ScrollArea viewportProps={{ className: 'overflow-x-hidden pr-2' }} className="min-h-0 max-h-96">
-          {releaseInfo ? <UpgradeReleaseNotes releaseInfo={releaseInfo} /> : t('update.noReleaseNotes')}
+          {activeReleaseInfo ? <UpgradeReleaseNotes releaseInfo={activeReleaseInfo} /> : t('update.noReleaseNotes')}
         </ScrollArea>
         <Divider className="my-0" />
         <DialogFooter>
           <Button variant="outline" onClick={onIgnore} disabled={isInstalling}>
             {t('update.later')}
           </Button>
-          <Button onClick={handleInstall} loading={isInstalling}>
-            {t('update.install')}
+          <Button onClick={handleInstall} loading={isInstalling} disabled={isDownloading}>
+            {isDownloading
+              ? `${t('settings.about.downloading')} ${Math.round(appUpdateState.downloadProgress)}%`
+              : isReadyToInstall
+                ? t('update.install')
+                : t('settings.about.checkUpdate.available')}
           </Button>
         </DialogFooter>
       </DialogContent>

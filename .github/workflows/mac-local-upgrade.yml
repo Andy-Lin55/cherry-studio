@@ -277,6 +277,23 @@ jobs:
             mv dist/dist/* dist/ 2>/dev/null || true
             rm -rf dist/dist
           fi
+          BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          BUILT_AT="$BUILT_AT" PKG_VERSION="$PKG_VERSION" SHA="$SHA" SHORT_SHA="$SHORT_SHA" node -e '
+            const fs = require("node:fs");
+            fs.mkdirSync("dist", { recursive: true });
+            const meta = {
+              version: process.env.PKG_VERSION,
+              commitSha: process.env.SHA,
+              shortSha: process.env.SHORT_SHA,
+              builtAt: process.env.BUILT_AT,
+              releaseName: `${process.env.PKG_VERSION} (${process.env.SHORT_SHA})`
+            };
+            fs.writeFileSync("dist/mac-build-meta.json", JSON.stringify(meta, null, 2) + "\n");
+          '
+          if [ -f dist/latest-mac.yml ]; then
+            printf "\ncommitSha: %s\nbuiltAt: '%s'\nreleaseName: '%s (%s)'\n" "$SHA" "$BUILT_AT" "$PKG_VERSION" "$SHORT_SHA" >> dist/latest-mac.yml
+          fi
           ls -la dist/
 
           shopt -s nullglob
@@ -284,6 +301,7 @@ jobs:
             dist/*-mac-*.dmg
             dist/*-mac-*.zip
             dist/latest-mac.yml
+            dist/mac-build-meta.json
             dist/*.exe
             dist/*.blockmap
             dist/latest.yml

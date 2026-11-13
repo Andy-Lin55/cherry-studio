@@ -109,6 +109,25 @@ install_app_bundle() {
     sudo ditto "$src_app" "$APP_DEST"
     sudo xattr -cr "$APP_DEST" || true
   fi
+
+  local lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+  local app_dir
+  for app_dir in "/Applications" "${HOME}/Applications"; do
+    [[ -d "$app_dir" ]] || continue
+    while IFS= read -r -d '' candidate; do
+      [[ "$candidate" == "$APP_DEST" ]] && continue
+      local base
+      base="$(basename "$candidate")"
+      if [[ "$base" =~ ^Cherry\ Studio(\ [0-9]+|\ \([0-9]+\)|\ copy|\ backup|\ \(old\)|\ old|\.bak)?\.app(\.bak|\.old)?$ ]] || { [[ "$base" == "Cherry Studio.app" ]] && [[ "$APP_DEST" == "/Applications/Cherry Studio.app" ]]; }; then
+        echo "==> Removing duplicate Cherry Studio bundle: ${candidate}"
+        "$lsregister" -u "$candidate" >/dev/null 2>&1 || true
+        rm -rf "$candidate" 2>/dev/null || sudo rm -rf "$candidate" || true
+      fi
+    done < <(find "$app_dir" -maxdepth 1 -name "Cherry Studio*" -print0 2>/dev/null)
+  done
+
+  rm -rf "${HOME}/Library/Caches/cherrystudio-updater" "${HOME}/Library/Caches/com.kangfenmao.CherryStudio.ShipIt"
+  "$lsregister" -f "$APP_DEST" >/dev/null 2>&1 || true
 }
 
 # 3. Acquire upgraded Cherry Studio.app (either from GitHub Release or local source build)
@@ -126,6 +145,15 @@ if [[ "$MODE" == "source" ]]; then
   BUILT_APP="${REPO_ROOT}/dist/mac-${ARCH}/Cherry Studio.app"
   if [[ ! -d "$BUILT_APP" ]]; then
     BUILT_APP="${REPO_ROOT}/dist/mac/Cherry Studio.app"
+  fi
+  if [[ -d "${BUILT_APP}/Contents/Resources" ]] && [[ ! -f "${BUILT_APP}/Contents/Resources/app-update.yml" ]]; then
+    cat > "${BUILT_APP}/Contents/Resources/app-update.yml" <<EOF
+owner: ${REPO%/*}
+repo: ${REPO#*/}
+provider: github
+releaseType: prerelease
+updaterCacheDirName: cherrystudio-updater
+EOF
   fi
   install_app_bundle "$BUILT_APP"
 else

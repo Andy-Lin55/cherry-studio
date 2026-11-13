@@ -264,12 +264,13 @@ export function mergeProviderModelsWithRegistry(remote: Partial<Model>[], regist
   return missing.length > 0 ? [...remote, ...missing] : remote
 }
 
-const ANTIGRAVITY_EFFORT_ORDER = ['low', 'medium', 'high', 'xhigh', 'max']
+const ANTIGRAVITY_EFFORT_ORDER = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+type AntigravityEffort = (typeof ANTIGRAVITY_EFFORT_ORDER)[number]
 
 export function parseAntigravityModelsStdout(stdout: string, provider: Provider, registryModels: Model[]): Model[] {
   const effortRegex = /-(low|medium|high|xhigh|max)$/i
   const nameEffortRegex = /\s*\((Low|Medium|High|XHigh|Max)\)$/i
-  const discoveredMap = new Map<string, { baseId: string; name: string; efforts: string[] }>()
+  const discoveredMap = new Map<string, { baseId: string; name: string; efforts: AntigravityEffort[] }>()
 
   for (const rawLine of stdout.split('\n')) {
     const line = rawLine.trim()
@@ -296,11 +297,11 @@ export function parseAntigravityModelsStdout(stdout: string, provider: Provider,
 
     let baseId = rawId
     let baseName = rawName
-    let effort: string | null = null
+    let effort: AntigravityEffort | null = null
 
     if (idEffortMatch) {
       baseId = rawId.slice(0, idEffortMatch.index)
-      effort = idEffortMatch[1].toLowerCase()
+      effort = idEffortMatch[1].toLowerCase() as AntigravityEffort
       baseName = nameEffortMatch ? rawName.slice(0, nameEffortMatch.index).trim() : rawName
     }
 
@@ -381,6 +382,8 @@ export function parseAntigravityModelsStdout(stdout: string, provider: Provider,
         supportsStreaming: true,
         contextWindow: 1048576,
         maxOutputTokens: 1048576,
+        isEnabled: true,
+        isHidden: false,
         ...(hasReasoning
           ? {
               reasoning: {

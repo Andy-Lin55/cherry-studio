@@ -9,14 +9,17 @@ import { cacheService } from '@data/CacheService'
 
 const { mocks, updateState } = vi.hoisted(() => ({
   mocks: {
+    checkForUpdate: vi.fn().mockResolvedValue(undefined),
     openSettingsTab: vi.fn(),
     showSearchPopup: vi.fn(),
     showUpdatePopup: vi.fn()
   },
   updateState: {
     available: false,
+    downloading: false,
     downloaded: false,
-    info: null as { version: string } | null
+    downloadProgress: 0,
+    info: null as { version: string; releaseName?: string } | null
   }
 }))
 
@@ -32,7 +35,11 @@ vi.unmock('@cherrystudio/ui')
 vi.unmock('@data/hooks/useCache')
 
 vi.mock('@renderer/hooks/useAppUpdateState', () => ({
-  useAppUpdateState: () => ({ appUpdateState: updateState, updateAppUpdateState: vi.fn() })
+  useAppUpdateState: () => ({
+    appUpdateState: updateState,
+    updateAppUpdateState: vi.fn(),
+    checkForUpdate: mocks.checkForUpdate
+  })
 }))
 
 vi.mock('@renderer/services/mainWindowNavigation', () => ({
@@ -60,6 +67,8 @@ vi.mock('react-i18next', () => ({
     t: (key: string) =>
       ({
         'globalSearch.open': 'Open global search',
+        'settings.about.checkUpdate.available': 'Update available',
+        'settings.about.downloading': 'Downloading update',
         'settings.about.updateAvailable': 'Found new version',
         'settings.title': 'Settings',
         'sidebar.account_menu': 'Account menu'
@@ -78,7 +87,9 @@ afterEach(() => {
   vi.clearAllMocks()
   MockCacheUtils.resetMocks()
   updateState.available = false
+  updateState.downloading = false
   updateState.downloaded = false
+  updateState.downloadProgress = 0
   updateState.info = null
 })
 
@@ -109,29 +120,70 @@ describe('ShellTabBarActions', () => {
 
     await user.click(updateButton)
 
+    expect(mocks.checkForUpdate).not.toHaveBeenCalled()
     await waitFor(() => {
       expect(mocks.showUpdatePopup).toHaveBeenCalledWith({ releaseInfo: updateState.info })
     })
   })
 
-  it('keeps the update action hidden until the update is ready to install', () => {
+  it('shows available updates immediately and starts download + dialog on one click', async () => {
+    const user = userEvent.setup()
     updateState.available = true
-    updateState.info = { version: '2.0.0' }
+    updateState.downloaded = false
+    updateState.info = { version: '2.1.10', releaseName: '2.1.10 (abc1234)' }
 
-    render(<AppUpdateButton />)
+    render(<AppUpdateButton showLabel />)
 
-    expect(screen.queryByRole('button', { name: 'Found new version' })).not.toBeInTheDocument()
+    const updateButton = screen.getByRole('button', { name: /Found new version/i })
+    expect(updateButton).toHaveTextContent('Update available')
+
+    await user.click(updateButton)
+
+    expect(mocks.checkForUpdate).toHaveBeenCalledTimes(1)
+    await waitFor(() => {
+      expect(mocks.showUpdatePopup).toHaveBeenCalledWith({ releaseInfo: updateState.info })
+    })
   })
 
-  it('keeps the ready update out of the tab bar when the full sidebar owns it', () => {
-    cacheService.setPersist('ui.sidebar.width', 180)
+  it('shows download progress percentage and skips duplicate download calls while downloading', async () => {
+    const user = userEvent.setup()
+    updateState.available = true
+    updateState.downloading = true
+    updateState.downloaded = false
+    updateState.downloadProgress = 42.4
+    updateState.info = { version: '2.1.10', releaseName: '2.1.10 (abc1234)' }
+
+    render(<AppUpdateButton showLabel />)
+
+    const updateButton = screen.getByRole('button', { name: /Downloading update/i })
+    expect(updateButton).toHaveTextContent('42%')
+
+    await user.click(updateButton)
+
+    expect(mocks.checkForUpdate).not.toHaveBeenCalled()
+    await waitFor(() => {
+      expect(mocks.showUpdatePopup).toHaveBeenCalledWith({ releaseInfo: updateState.info })
+    })
+  })
+
+  it('shows the update button in the top-right tab bar across full and icon sidebar layouts', () => {
     updateState.available = true
     updateState.downloaded = true
     updateState.info = { version: '2.0.0' }
 
-    render(<ShellTabBarActions />)
+    cacheService.setPersist('ui.sidebar.width', 180)
+    const { rerender } = render(<ShellTabBarActions />)
+    expect(screen.getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Found new version',
+      'Open global search'
+    ])
 
-    expect(screen.queryByRole('button', { name: 'Found new version' })).not.toBeInTheDocument()
+    cacheService.setPersist('ui.sidebar.width', 50)
+    rerender(<ShellTabBarActions />)
+    expect(screen.getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Found new version',
+      'Open global search'
+    ])
   })
 
   it('keeps the update action at the left of the hidden-sidebar action group', () => {
