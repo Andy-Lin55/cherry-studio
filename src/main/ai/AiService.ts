@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 
@@ -32,21 +33,25 @@ import { assistantDataService } from '@data/services/AssistantService'
 import { jobService } from '@data/services/JobService'
 import { providerRegistryService } from '@data/services/ProviderRegistryService'
 import { loggerService } from '@logger'
+import { resolveLocalAgentLaunch } from '@main/ai/runtime/localAgent/launch'
 import type { JobHandle } from '@main/core/job/types'
 import { BaseService, DependsOn, Injectable, Phase, ServicePhase } from '@main/core/lifecycle'
 import { messageService } from '@main/data/services/MessageService'
 import { modelService } from '@main/data/services/ModelService'
 import { providerService } from '@main/data/services/ProviderService'
 import { installBuiltinSkills } from '@main/utils/builtinSkills'
+import { findExecutableInEnv } from '@main/utils/commandResolver'
 import { downloadImageAsBase64 } from '@main/utils/downloadAsBase64'
 import type { CompactionSink } from '@shared/ai/compaction'
+import type { LocalAgentConfiguration } from '@shared/ai/localAgent'
 import type { AiToolApprovalRespondRequest, AiToolApprovalRespondResponse } from '@shared/ai/transport'
 import { isDataApiNotFoundError } from '@shared/data/api/errors'
 import type { JobSnapshot } from '@shared/data/api/schemas/jobs'
+import { isAntigravityProviderId } from '@shared/data/presets/antigravity'
 import { type Assistant } from '@shared/data/types/assistant'
 import type { CleanupPolicy, FileEntry } from '@shared/data/types/file'
 import type { ImageGenerationMode, ListedModels } from '@shared/data/types/model'
-import { type Model, type UniqueModelId, parseUniqueModelId } from '@shared/data/types/model'
+import { type Model, type UniqueModelId, createUniqueModelId, parseUniqueModelId } from '@shared/data/types/model'
 import type { Provider } from '@shared/data/types/provider'
 import type { Base64String, CreateInternalEntryIpcParams, UrlString } from '@shared/types/file'
 import {
@@ -257,6 +262,147 @@ export function mergeProviderModelsWithRegistry(remote: Partial<Model>[], regist
   const seen = new Set(remote.map((m) => bareModelKey(m.apiModelId)))
   const missing = registry.filter((m) => !seen.has(bareModelKey(m.apiModelId)))
   return missing.length > 0 ? [...remote, ...missing] : remote
+}
+
+const ANTIGRAVITY_EFFORT_ORDER = ['low', 'medium', 'high', 'xhigh', 'max']
+
+export function parseAntigravityModelsStdout(stdout: string, provider: Provider, registryModels: Model[]): Model[] {
+  const effortRegex = /-(low|medium|high|xhigh|max)$/i
+  const nameEffortRegex = /\s*\((Low|Medium|High|XHigh|Max)\)$/i
+  const discoveredMap = new Map<string, { baseId: string; name: string; efforts: string[] }>()
+
+  for (const rawLine of stdout.split('\n')) {
+    const line = rawLine.trim()
+    if (!line) continue
+    let rawId = ''
+    let rawName = ''
+    const tabIndex = line.indexOf('\t')
+    if (tabIndex !== -1) {
+      rawId = line.slice(0, tabIndex).trim()
+      rawName = line.slice(tabIndex + 1).trim()
+    } else {
+      const match = /^(\S+)\s+(.+)$/.exec(line)
+      if (match) {
+        rawId = match[1].trim()
+        rawName = match[2].trim()
+      } else {
+        rawId = line
+        rawName = line
+      }
+    }
+
+    const idEffortMatch = effortRegex.exec(rawId)
+    const nameEffortMatch = nameEffortRegex.exec(rawName)
+
+    let baseId = rawId
+    let baseName = rawName
+    let effort: string | null = null
+
+    if (idEffortMatch) {
+      baseId = rawId.slice(0, idEffortMatch.index)
+      effort = idEffortMatch[1].toLowerCase()
+      baseName = nameEffortMatch ? rawName.slice(0, nameEffortMatch.index).trim() : rawName
+    }
+
+    if (!discoveredMap.has(baseId)) {
+      discoveredMap.set(baseId, { baseId, name: baseName, efforts: [] })
+    }
+    if (effort && !discoveredMap.get(baseId)!.efforts.includes(effort)) {
+      discoveredMap.get(baseId)!.efforts.push(effort)
+    }
+  }
+
+  const results: Model[] = []
+  for (const item of discoveredMap.values()) {
+    const registryMatch = registryModels.find(
+      (m) =>
+        m.apiModelId === item.baseId ||
+        m.id === `${provider.id}::${item.baseId}` ||
+        parseUniqueModelId(m.id).modelId === item.baseId ||
+        (item.baseId === 'gpt-oss-120b' && (m.apiModelId === 'gpt-oss-120b-medium' || m.id.includes('gpt-oss-120b'))) ||
+        (item.baseId === 'gemini-3.8-flash' &&
+          (m.apiModelId === 'gemini-3.8-flash' || m.id.includes('gemini-3-8-flash')))
+    )
+
+    const efforts = [...item.efforts].sort(
+      (a, b) => ANTIGRAVITY_EFFORT_ORDER.indexOf(a) - ANTIGRAVITY_EFFORT_ORDER.indexOf(b)
+    )
+
+    if (registryMatch) {
+      const model: Model = {
+        ...registryMatch,
+        name: item.name
+      }
+      if (efforts.length > 0) {
+        const defaultEffort = efforts.includes('medium') ? 'medium' : efforts[0]
+        model.reasoning = {
+          controls: [{ kind: 'effort', values: efforts, default: defaultEffort }],
+          defaultEffort,
+          selectableEfforts: efforts
+        }
+      }
+      results.push(model)
+    } else {
+      const hasReasoning = efforts.length > 0
+      const defaultEffort = hasReasoning ? (efforts.includes('medium') ? 'medium' : efforts[0]) : undefined
+      const group = /claude/i.test(item.baseId)
+        ? 'Anthropic'
+        : /gemini|gemma/i.test(item.baseId)
+          ? 'Google'
+          : /gpt|o[1-9]/i.test(item.baseId)
+            ? 'OpenAI'
+            : 'Google'
+
+      const model: Model = {
+        id: createUniqueModelId(provider.id, item.baseId),
+        providerId: provider.id,
+        apiModelId: item.baseId,
+        name: item.name,
+        group,
+        capabilities: hasReasoning
+          ? [
+              'reasoning',
+              'function-call',
+              'image-recognition',
+              'audio-recognition',
+              'video-recognition',
+              'file-input',
+              'structured-output'
+            ]
+          : [
+              'function-call',
+              'image-recognition',
+              'audio-recognition',
+              'video-recognition',
+              'file-input',
+              'structured-output'
+            ],
+        endpointTypes: ['openai-chat-completions'],
+        supportsStreaming: true,
+        contextWindow: 1048576,
+        maxOutputTokens: 1048576,
+        ...(hasReasoning
+          ? {
+              reasoning: {
+                controls: [{ kind: 'effort', values: efforts, default: defaultEffort! }],
+                defaultEffort: defaultEffort!,
+                selectableEfforts: efforts
+              }
+            }
+          : {})
+      }
+      results.push(model)
+    }
+  }
+
+  // Preserve any registry models not listed in dynamic agy output
+  for (const reg of registryModels) {
+    if (!results.some((m) => m.id === reg.id || m.apiModelId === reg.apiModelId)) {
+      results.push(reg)
+    }
+  }
+
+  return results
 }
 
 // ── Request types ──────────────────────────────────────────────────
@@ -1343,6 +1489,53 @@ export class AiService extends BaseService {
     }
   }
 
+  private async listDynamicAntigravityModels(provider: Provider): Promise<Model[] | null> {
+    try {
+      let executable: string | null = null
+      let env: NodeJS.ProcessEnv | undefined
+
+      try {
+        const config: LocalAgentConfiguration = {
+          protocol: 'acp',
+          presetId: 'antigravity-acp',
+          enabled: true,
+          args: [],
+          env: {}
+        }
+        const launch = await resolveLocalAgentLaunch(config, undefined, false)
+        executable = launch.executable
+        env = launch.env
+      } catch {
+        executable = await findExecutableInEnv('agy')
+      }
+
+      if (!executable) {
+        return null
+      }
+
+      const stdout = await new Promise<string>((resolve, reject) => {
+        execFile(executable, ['models'], { env, timeout: 10000 }, (error, stdout) => {
+          if (error) reject(error)
+          else resolve(stdout ?? '')
+        })
+      })
+
+      if (!stdout || !stdout.trim()) {
+        return null
+      }
+
+      const registryModels = providerRegistryService.listProviderRegistryModels({
+        providerId: provider.id,
+        presetProviderId: provider.presetProviderId ?? null
+      })
+
+      return parseAntigravityModelsStdout(stdout, provider, registryModels)
+    } catch (error) {
+      logger.warn('Failed to fetch dynamic models from Antigravity CLI', { error })
+      return null
+    }
+  }
+
   // ── Model listing ──
   async listModels(request: ListModelsRequest): Promise<ListedModels> {
     let providerId = request.providerId
@@ -1365,6 +1558,12 @@ export class AiService extends BaseService {
     // shipped catalog instead of calling the upstream API. The rest of the pull
     // flow (enrich → reconcile → enable) is unchanged.
     if (provider.modelListSource === 'registry') {
+      if (isAntigravityProviderId(provider.id)) {
+        const dynamicModels = await this.listDynamicAntigravityModels(provider)
+        if (dynamicModels && dynamicModels.length > 0) {
+          return { models: dynamicModels }
+        }
+      }
       return {
         models: providerRegistryService.listProviderRegistryModels({
           providerId,

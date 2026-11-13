@@ -29,6 +29,12 @@ describe('antigravity preset & registry', () => {
     expect(resolveAntigravityAcpModel('google-antigravity::claude-opus-5-5')).toEqual({
       model: 'claude-opus-5-5'
     })
+    expect(resolveAntigravityAcpModel('google-antigravity::gemini-4-hydrogen')).toEqual({
+      model: 'gemini-4-hydrogen'
+    })
+    expect(resolveAntigravityAcpModel('google-antigravity::gemini-pro-orchestrator-g1-pro')).toEqual({
+      model: 'gemini-pro-orchestrator-g1-pro'
+    })
     expect(resolveAntigravityAcpModel('google-antigravity::gemini-3-8-flash')).toEqual({
       model: 'gemini-3.8-flash'
     })
@@ -38,6 +44,10 @@ describe('antigravity preset & registry', () => {
     expect(resolveAntigravityAcpModel('claude-opus-5-5-high')).toEqual({
       model: 'claude-opus-5-5',
       thoughtLevel: 'high'
+    })
+    expect(resolveAntigravityAcpModel('gemini-4-hydrogen-xhigh')).toEqual({
+      model: 'gemini-4-hydrogen',
+      thoughtLevel: 'xhigh'
     })
     expect(resolveAntigravityAcpModel('gemini-3.8-flash-low')).toEqual({
       model: 'gemini-3.8-flash',
@@ -52,11 +62,11 @@ describe('antigravity preset & registry', () => {
     expect(mapReasoningEffortToAntigravityThoughtLevel('auto')).toBe('medium')
     expect(mapReasoningEffortToAntigravityThoughtLevel(undefined)).toBe('medium')
     expect(mapReasoningEffortToAntigravityThoughtLevel('high')).toBe('high')
-    expect(mapReasoningEffortToAntigravityThoughtLevel('xhigh')).toBe('high')
-    expect(mapReasoningEffortToAntigravityThoughtLevel('max')).toBe('high')
+    expect(mapReasoningEffortToAntigravityThoughtLevel('xhigh')).toBe('xhigh')
+    expect(mapReasoningEffortToAntigravityThoughtLevel('max')).toBe('xhigh')
   })
 
-  it('registers google-antigravity as an external-cli provider with all 5 models in provider-registry', () => {
+  it('registers google-antigravity as an external-cli provider with all models in provider-registry', () => {
     const dataDir = resolve(process.cwd(), 'packages/provider-registry/data')
     const bundledProviders = JSON.parse(readFileSync(resolve(dataDir, 'providers.json'), 'utf-8')) as {
       providers: Array<Record<string, unknown>>
@@ -76,6 +86,8 @@ describe('antigravity preset & registry', () => {
         'claude-opus-5-5',
         'claude-sonnet-5-5',
         'gemini-4-argon',
+        'gemini-4-hydrogen',
+        'gemini-pro-orchestrator-g1-pro',
         'gemini-3-8-flash',
         'gpt-oss-120b'
       ])

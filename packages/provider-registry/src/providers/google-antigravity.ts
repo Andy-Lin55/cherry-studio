@@ -55,6 +55,15 @@ export default defineProvider({
       reasoningContracts: antigravityReasoning(['low', 'medium', 'high'], 'medium')
     },
     {
+      modelId: 'gemini-4-hydrogen',
+      apiModelId: 'gemini-4-hydrogen',
+      reasoningContracts: antigravityReasoning(['low', 'medium', 'high', 'xhigh'], 'medium')
+    },
+    {
+      modelId: 'gemini-pro-orchestrator-g1-pro',
+      apiModelId: 'gemini-pro-orchestrator-g1-pro'
+    },
+    {
       modelId: 'gemini-3-8-flash',
       apiModelId: 'gemini-3.8-flash',
       reasoningContracts: antigravityReasoning(['low', 'medium', 'high'], 'medium')

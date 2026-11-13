@@ -17,7 +17,7 @@ export function isAntigravityResumeToken(token?: string | null): boolean {
   return token.startsWith(ANTIGRAVITY_RESUME_TOKEN_PREFIX)
 }
 
-export type AntigravityThoughtLevel = 'low' | 'medium' | 'high'
+export type AntigravityThoughtLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export interface ResolvedAntigravityAcpModel {
   model: string
@@ -28,6 +28,8 @@ const CANONICAL_TO_ACP_MODEL: Record<string, string> = {
   'claude-opus-5-5': 'claude-opus-5-5',
   'claude-sonnet-5-5': 'claude-sonnet-5-5',
   'gemini-4-argon': 'gemini-4-argon',
+  'gemini-4-hydrogen': 'gemini-4-hydrogen',
+  'gemini-pro-orchestrator-g1-pro': 'gemini-pro-orchestrator-g1-pro',
   'gemini-3-8-flash': 'gemini-3.8-flash',
   'gemini-3.8-flash': 'gemini-3.8-flash',
   'gpt-oss-120b': 'gpt-oss-120b-medium',
@@ -58,7 +60,7 @@ export function resolveAntigravityAcpModel(modelId: string): ResolvedAntigravity
     return { model: CANONICAL_TO_ACP_MODEL[raw] }
   }
 
-  const effortMatch = /^(.*)-(low|medium|high)$/.exec(raw)
+  const effortMatch = /^(.*)-(low|medium|high|xhigh|max)$/.exec(raw)
   if (effortMatch) {
     const [, baseCandidate, effort] = effortMatch
     const mappedBase = CANONICAL_TO_ACP_MODEL[baseCandidate] ?? baseCandidate
@@ -71,16 +73,17 @@ export function resolveAntigravityAcpModel(modelId: string): ResolvedAntigravity
   return { model: raw }
 }
 
-/** Map Cherry Studio reasoning effort values to `agy acp` `thought_level` (`low` | `medium` | `high`). */
+/** Map Cherry Studio reasoning effort values to `agy acp` `thought_level` (`low` | `medium` | `high` | `xhigh`). */
 export function mapReasoningEffortToAntigravityThoughtLevel(effort?: string | null): AntigravityThoughtLevel {
   switch (effort) {
     case 'minimal':
     case 'low':
       return 'low'
-    case 'high':
     case 'xhigh':
     case 'max':
     case 'ultra':
+      return 'xhigh'
+    case 'high':
       return 'high'
     case 'medium':
     case 'auto':

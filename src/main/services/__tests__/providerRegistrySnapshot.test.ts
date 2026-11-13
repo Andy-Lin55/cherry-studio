@@ -35,6 +35,7 @@ const bundledDirectory = resolve('packages/provider-registry/data')
 const antigravityOverrides = ProviderModelListSchema.parse(
   JSON.parse(readFileSync(resolve(bundledDirectory, 'provider-models.json'), 'utf-8'))
 ).overrides.filter((entry) => entry.providerId === 'google-antigravity')
+const antigravityModelIds = new Set(antigravityOverrides.map((entry) => entry.modelId))
 
 function bundledModel(id: string) {
   return ModelListSchema.parse(JSON.parse(readFileSync(resolve(bundledDirectory, 'models.json'), 'utf-8'))).models.find(
@@ -93,16 +94,15 @@ describe('writeProviderRegistrySnapshot', () => {
     const models = JSON.parse(writes.get('models.json')!).models
     const overrides = JSON.parse(writes.get('provider-models.json')!).overrides
     const manifest = JSON.parse(writes.get('manifest.json')!)
-    const antigravityModelIds = new Set(antigravityOverrides.map((entry) => entry.modelId))
     const bundledModels = ModelListSchema.parse(
       JSON.parse(readFileSync(resolve(bundledDirectory, 'models.json'), 'utf-8'))
     ).models.filter((model) => antigravityModelIds.has(model.id))
     expect(models.map((model: { id: string }) => model.id).sort()).toEqual(
       bundledModels.map((entry) => entry.id).sort()
     )
-    expect(models).toHaveLength(5)
+    expect(models).toHaveLength(antigravityModelIds.size)
     expect(overrides.filter((entry: { providerId: string }) => entry.providerId === 'google-antigravity')).toHaveLength(
-      5
+      antigravityModelIds.size
     )
     expect(manifest.files['models.json']).toBe(JSON.parse(writes.get('models.json')!).version)
     expect(manifest.files['provider-models.json']).toBe(JSON.parse(writes.get('provider-models.json')!).version)
@@ -129,12 +129,12 @@ describe('writeProviderRegistrySnapshot', () => {
     expect(models.filter((model: { id: string }) => model.id === 'claude-opus-5-5')).toEqual([
       expect.objectContaining({ name: 'Upstream Opus' })
     ])
-    expect(models).toHaveLength(5)
+    expect(models).toHaveLength(antigravityModelIds.size)
     expect(overrides.filter((entry: { modelId: string }) => entry.modelId === 'claude-opus-5-5')).toEqual([
       expect.objectContaining({ disabled: true })
     ])
     expect(overrides.filter((entry: { providerId: string }) => entry.providerId === 'google-antigravity')).toHaveLength(
-      5
+      antigravityModelIds.size
     )
   })
 })

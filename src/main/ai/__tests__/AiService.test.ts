@@ -242,7 +242,8 @@ vi.mock('../runtime/aiSdk/retry/retryPolicy', () => ({
 
 const { listModels: listModelsFromProviderActual } =
   await vi.importActual<typeof ListModelsModule>('../provider/listModels')
-const { AiService, imageInputEntryParams, resolveRequiredNativeFileSupport } = await import('../AiService')
+const { AiService, imageInputEntryParams, resolveRequiredNativeFileSupport, parseAntigravityModelsStdout } =
+  await import('../AiService')
 const { messageService } = await import('@main/data/services/MessageService')
 
 /**
@@ -3104,5 +3105,81 @@ describe('AiService.listModels', () => {
 
     mockListModelsFromProvider.mockRejectedValue(new Error('Unauthorized'))
     await expect(service.listModels({ providerId: 'ppio', throwOnError: true })).rejects.toThrow('Unauthorized')
+  })
+
+  it('parses agy models output dynamically, extracting models, reasoning levels, and human names', () => {
+    const stdout = `gemini-4-argon-medium\tGemini 4 Argon (Medium)
+gemini-4-argon-high\tGemini 4 Argon (High)
+gemini-4-argon-low\tGemini 4 Argon (Low)
+gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)
+gemini-4-hydrogen-xhigh\tGemini 4 Hydrogen (XHigh)
+gemini-4-hydrogen-medium\tGemini 4 Hydrogen (Medium)
+gemini-4-hydrogen-low\tGemini 4 Hydrogen (Low)
+gemini-pro-orchestrator-g1-pro\tOrchestrator (Argon)
+gemini-3.8-flash-high\tGemini 3.8 Flash (High)
+claude-opus-5-5-low\tClaude Opus 5.5 (Low)
+claude-sonnet-5-5-high\tClaude Sonnet 5.5 (High)
+gpt-oss-120b-medium\tGPT-OSS 120B (Medium)
+future-model-ultra-high\tFuture Model Ultra (High)`
+
+    const provider = { id: 'google-antigravity', modelListSource: 'registry' } as any
+    const registryModels = [
+      {
+        id: 'google-antigravity::gemini-4-argon',
+        apiModelId: 'gemini-4-argon',
+        name: 'Gemini 4 Argon',
+        capabilities: ['reasoning']
+      },
+      {
+        id: 'google-antigravity::gemini-4-hydrogen',
+        apiModelId: 'gemini-4-hydrogen',
+        name: 'Gemini 4 Hydrogen',
+        capabilities: ['reasoning']
+      },
+      {
+        id: 'google-antigravity::gemini-pro-orchestrator-g1-pro',
+        apiModelId: 'gemini-pro-orchestrator-g1-pro',
+        name: 'Orchestrator (Argon)',
+        capabilities: []
+      }
+    ] as any
+
+    const parsed = parseAntigravityModelsStdout(stdout, provider, registryModels)
+
+    const argon = parsed.find((m) => m.apiModelId === 'gemini-4-argon')
+    expect(argon).toBeDefined()
+    expect(argon?.name).toBe('Gemini 4 Argon')
+    expect(argon?.reasoning?.controls[0].values).toEqual(['low', 'medium', 'high'])
+
+    const hydrogen = parsed.find((m) => m.apiModelId === 'gemini-4-hydrogen')
+    expect(hydrogen).toBeDefined()
+    expect(hydrogen?.name).toBe('Gemini 4 Hydrogen')
+    expect(hydrogen?.reasoning?.controls[0].values).toEqual(['low', 'medium', 'high', 'xhigh'])
+
+    const orchestrator = parsed.find((m) => m.apiModelId === 'gemini-pro-orchestrator-g1-pro')
+    expect(orchestrator).toBeDefined()
+    expect(orchestrator?.name).toBe('Orchestrator (Argon)')
+    expect(orchestrator?.reasoning).toBeUndefined()
+
+    const future = parsed.find((m) => m.apiModelId === 'future-model-ultra')
+    expect(future).toBeDefined()
+    expect(future?.name).toBe('Future Model Ultra')
+    expect(future?.capabilities).toContain('reasoning')
+    expect(future?.reasoning?.controls[0].values).toEqual(['high'])
+  })
+
+  it('falls back to registry models for google-antigravity when dynamic fetch fails', async () => {
+    const service = createService()
+    const registryModels = [
+      { id: 'google-antigravity::gemini-4-argon', apiModelId: 'gemini-4-argon', name: 'Gemini 4 Argon' }
+    ]
+    mockProviderGetByProviderId.mockReturnValue({ id: 'google-antigravity', modelListSource: 'registry' })
+    mockListProviderRegistryModels.mockReturnValue(registryModels)
+
+    // Force dynamic listing to fail
+    vi.spyOn(service as any, 'listDynamicAntigravityModels').mockResolvedValue(null)
+
+    const result = await service.listModels({ providerId: 'google-antigravity' })
+    expect(result).toEqual({ models: registryModels })
   })
 })
